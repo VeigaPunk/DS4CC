@@ -108,5 +108,32 @@ else
     echo "(Codex not detected — skipping Codex hook bridge setup)"
 fi
 
+# ── OpenCode plugin (optional) ───────────────────────────────────────
+
+OPENCODE_PLUGINS="$HOME/.config/opencode/plugins"
+if command -v opencode &>/dev/null || [ -d "$HOME/.config/opencode" ]; then
+    echo ""
+    echo "OpenCode detected — installing GamePadCC plugin..."
+    mkdir -p "$OPENCODE_PLUGINS"
+
+    OPENCODE_SRC="$SCRIPT_DIR/hooks/opencode"
+    if [ -d "$OPENCODE_SRC" ]; then
+        cp "$OPENCODE_SRC/gamepadcc-bridge.js" "$OPENCODE_PLUGINS/gamepadcc-bridge.js"
+        sed -i 's/\r$//' "$OPENCODE_PLUGINS/gamepadcc-bridge.js" 2>/dev/null || true
+        echo "Installed plugin to $OPENCODE_PLUGINS/gamepadcc-bridge.js"
+
+        # Deploy state hook script
+        cp "$SCRIPT_DIR/hooks/codex/gamepadcc-state.sh" "$OPENCODE_PLUGINS/gamepadcc-state.sh"
+        sed -i 's/\r$//' "$OPENCODE_PLUGINS/gamepadcc-state.sh" 2>/dev/null || true
+        chmod +x "$OPENCODE_PLUGINS/gamepadcc-state.sh"
+        echo "Installed state hook to $OPENCODE_PLUGINS/gamepadcc-state.sh"
+    else
+        echo "Warning: hooks/opencode/ directory not found in repo. Skipping OpenCode setup."
+    fi
+else
+    echo ""
+    echo "(OpenCode not detected — skipping OpenCode plugin setup)"
+fi
+
 echo ""
-echo "Done. Restart Claude Code for hooks to take effect."
+echo "Done. Restart Claude Code / OpenCode for hooks to take effect."

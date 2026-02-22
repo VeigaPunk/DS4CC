@@ -12,6 +12,7 @@ pub struct Config {
     pub scroll: ScrollConfig,
     pub tmux: TmuxConfig,
     pub codex: CodexConfig,
+    pub opencode: OpenCodeConfig,
     /// Directory where agent state files are written (gamepadcc_agent_*)
     pub state_dir: String,
     pub poll_interval_ms: u64,
@@ -131,6 +132,21 @@ impl Default for CodexConfig {
     }
 }
 
+/// OpenCode plugin configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct OpenCodeConfig {
+    /// Enable auto-setup of OpenCode plugin on startup.
+    /// When true, deploys the plugin to ~/.config/opencode/plugins/ in WSL.
+    pub enabled: bool,
+}
+
+impl Default for OpenCodeConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
 /// Button mapping configuration.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
@@ -155,6 +171,7 @@ impl Default for Config {
             scroll: ScrollConfig::default(),
             tmux: TmuxConfig::default(),
             codex: CodexConfig::default(),
+            opencode: OpenCodeConfig::default(),
             state_dir: default_state_dir(),
             poll_interval_ms: 500, // 2Hz
             idle_timeout_s: 30,
