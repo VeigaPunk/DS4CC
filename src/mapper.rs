@@ -62,36 +62,39 @@ pub enum Action {
 }
 
 /// Key repeat timing configuration.
-const DEBOUNCE_MS: u64 = 50;       // Ignore re-triggers within this window
 const REPEAT_DELAY_MS: u64 = 300;  // Hold this long before repeating starts
 const REPEAT_RATE_MS: u64 = 100;   // Interval between repeats once started
 
-/// Per-button repeat tracking.
+/// Per-button repeat tracking with two-frame confirmation.
+/// The first frame of a new press is treated as "pending" — only fires
+/// if the direction is still held on the next frame. This filters out
+/// single-frame glitches from hat switch bounce (~8ms latency, unnoticeable).
 #[derive(Clone, Default)]
 struct RepeatTimer {
-    /// When the button was first pressed (None = not held)
+    /// Set on the first frame of a new press; confirmed on the second frame.
+    pending_since: Option<Instant>,
+    /// When the confirmed press started (None = not held).
     pressed_at: Option<Instant>,
-    /// When the last action was fired
+    /// When the last action was fired.
     last_fired: Option<Instant>,
 }
 
 impl RepeatTimer {
-    /// Called when button is newly pressed. Returns true if action should fire.
-    fn on_press(&mut self, now: Instant) -> bool {
-        // Debounce: if we just released and re-pressed within DEBOUNCE_MS, ignore
-        if let Some(last) = self.last_fired {
-            if now.duration_since(last).as_millis() < DEBOUNCE_MS as u128 {
-                self.pressed_at = Some(now);
-                return false;
-            }
-        }
-        self.pressed_at = Some(now);
-        self.last_fired = Some(now);
-        true
+    /// Called when button is newly pressed (first frame). Marks as pending.
+    fn on_press(&mut self, now: Instant) {
+        self.pending_since = Some(now);
     }
 
-    /// Called each frame while button is held. Returns true if a repeat should fire.
+    /// Called each frame while button is held. Returns true if an action should fire.
     fn on_hold(&mut self, now: Instant) -> bool {
+        // Confirm pending press (second consecutive frame)
+        if let Some(pending) = self.pending_since.take() {
+            self.pressed_at = Some(pending);
+            self.last_fired = Some(now);
+            return true;
+        }
+
+        // Normal hold-repeat logic
         let pressed_at = match self.pressed_at {
             Some(t) => t,
             None => return false,
@@ -111,7 +114,7 @@ impl RepeatTimer {
     /// Called when button is released.
     fn on_release(&mut self) {
         self.pressed_at = None;
-        // Keep last_fired for debounce
+        self.pending_since = None;
     }
 }
 
@@ -173,53 +176,45 @@ impl MapperState {
 
         // Up
         if up_held && !prev_up {
-            if self.repeat_up.on_press(now) {
-                actions.push(Action::KeyCombo(vec![VKey::Up]));
-            }
+            self.repeat_up.on_press(now);
         } else if up_held {
             if self.repeat_up.on_hold(now) {
                 actions.push(Action::KeyCombo(vec![VKey::Up]));
             }
-        } else if !up_held && prev_up {
+        } else if !up_held {
             self.repeat_up.on_release();
         }
 
         // Down
         if down_held && !prev_down {
-            if self.repeat_down.on_press(now) {
-                actions.push(Action::KeyCombo(vec![VKey::Down]));
-            }
+            self.repeat_down.on_press(now);
         } else if down_held {
             if self.repeat_down.on_hold(now) {
                 actions.push(Action::KeyCombo(vec![VKey::Down]));
             }
-        } else if !down_held && prev_down {
+        } else if !down_held {
             self.repeat_down.on_release();
         }
 
         // Left
         if left_held && !prev_left {
-            if self.repeat_left.on_press(now) {
-                actions.push(Action::KeyCombo(vec![VKey::Left]));
-            }
+            self.repeat_left.on_press(now);
         } else if left_held {
             if self.repeat_left.on_hold(now) {
                 actions.push(Action::KeyCombo(vec![VKey::Left]));
             }
-        } else if !left_held && prev_left {
+        } else if !left_held {
             self.repeat_left.on_release();
         }
 
         // Right
         if right_held && !prev_right {
-            if self.repeat_right.on_press(now) {
-                actions.push(Action::KeyCombo(vec![VKey::Right]));
-            }
+            self.repeat_right.on_press(now);
         } else if right_held {
             if self.repeat_right.on_hold(now) {
                 actions.push(Action::KeyCombo(vec![VKey::Right]));
             }
-        } else if !right_held && prev_right {
+        } else if !right_held {
             self.repeat_right.on_release();
         }
 
@@ -325,11 +320,16 @@ mod tests {
     }
 
     #[test]
-    fn dpad_produces_arrows() {
+    fn dpad_two_frame_confirm() {
         let mut mapper = MapperState::default();
         let mut buttons = ButtonState::default();
 
+        // Frame 1: press Up — should NOT fire yet (pending)
         buttons.dpad = DPad::Up;
+        let actions = mapper.update(&buttons);
+        assert!(actions.is_empty(), "Should not fire on first frame");
+
+        // Frame 2: still held — confirmed, fires
         let actions = mapper.update(&buttons);
         assert_eq!(actions.len(), 1);
         match &actions[0] {
@@ -337,7 +337,7 @@ mod tests {
             _ => panic!("Expected KeyCombo"),
         }
 
-        // Holding should NOT immediately repeat
+        // Frame 3: still held — no repeat yet (within delay)
         let actions = mapper.update(&buttons);
         assert!(actions.is_empty(), "Should not repeat immediately");
 
@@ -348,21 +348,19 @@ mod tests {
     }
 
     #[test]
-    fn dpad_debounce() {
+    fn dpad_single_frame_glitch_filtered() {
         let mut mapper = MapperState::default();
         let mut buttons = ButtonState::default();
 
-        // Press up
+        // Frame 1: glitch press Up
         buttons.dpad = DPad::Up;
         let actions = mapper.update(&buttons);
-        assert_eq!(actions.len(), 1);
+        assert!(actions.is_empty(), "Pending, not fired");
 
-        // Quick release and re-press (within debounce window) should NOT fire
+        // Frame 2: immediately released — glitch filtered
         buttons.dpad = DPad::Neutral;
-        mapper.update(&buttons);
-        buttons.dpad = DPad::Up;
         let actions = mapper.update(&buttons);
-        assert!(actions.is_empty(), "Should be debounced");
+        assert!(actions.is_empty(), "Single-frame glitch should not fire");
     }
 
     #[test]
