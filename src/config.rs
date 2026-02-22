@@ -11,6 +11,8 @@ pub struct Config {
     pub buttons: ButtonConfig,
     pub state_file: String,
     pub poll_interval_ms: u64,
+    /// Seconds after "done" before auto-transitioning to "idle" (0 = disabled)
+    pub idle_timeout_s: u64,
 }
 
 /// Lightbar color configuration per agent state.
@@ -56,6 +58,7 @@ impl Default for Config {
             buttons: ButtonConfig::default(),
             state_file: default_state_file_path(),
             poll_interval_ms: 500, // 2Hz
+            idle_timeout_s: 30,
         }
     }
 }

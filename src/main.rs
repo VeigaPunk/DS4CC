@@ -44,8 +44,9 @@ async fn main() {
     // Spawn state file poller (runs independently of controller)
     let state_path = PathBuf::from(&cfg.state_file);
     let poll_ms = cfg.poll_interval_ms;
+    let idle_timeout_s = cfg.idle_timeout_s;
     tokio::spawn(async move {
-        state::poll_state_file(state_path, poll_ms, state_tx).await;
+        state::poll_state_file(state_path, poll_ms, idle_timeout_s, state_tx).await;
     });
 
     // Main connection loop — reconnects on disconnect

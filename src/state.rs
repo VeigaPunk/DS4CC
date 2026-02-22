@@ -4,6 +4,7 @@
 ///   idle | working | done | error
 
 use std::path::PathBuf;
+use std::time::Instant;
 use tokio::time::{interval, Duration};
 
 /// Agent states that map to lightbar colors.
@@ -40,22 +41,40 @@ impl std::fmt::Display for AgentState {
 }
 
 /// Polls the state file and sends state changes to a channel.
+/// When `idle_timeout_s > 0`, auto-transitions from `done` to `idle` after the timeout.
 pub async fn poll_state_file(
     path: PathBuf,
     poll_ms: u64,
+    idle_timeout_s: u64,
     tx: tokio::sync::watch::Sender<AgentState>,
 ) {
     let mut ticker = interval(Duration::from_millis(poll_ms));
     let mut last_state = AgentState::Idle;
+    let mut state_changed_at = Instant::now();
 
     loop {
         ticker.tick().await;
+
+        // Auto-idle: if we've been in "done" or "error" long enough, transition to idle
+        if idle_timeout_s > 0
+            && (last_state == AgentState::Done || last_state == AgentState::Error)
+            && state_changed_at.elapsed() >= Duration::from_secs(idle_timeout_s)
+        {
+            log::info!("Auto-idle: {last_state} → idle (after {idle_timeout_s}s)");
+            last_state = AgentState::Idle;
+            state_changed_at = Instant::now();
+            let _ = tx.send(AgentState::Idle);
+            // Clear the state file so we don't re-trigger
+            let _ = std::fs::write(&path, "idle");
+        }
+
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
                 if let Some(new_state) = AgentState::parse(&contents) {
                     if new_state != last_state {
                         log::info!("State changed: {last_state} → {new_state}");
                         last_state = new_state;
+                        state_changed_at = Instant::now();
                         let _ = tx.send(new_state);
                     }
                 }

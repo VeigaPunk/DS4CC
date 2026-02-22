@@ -76,4 +76,38 @@ cross = "Enter"
 circle = "Escape"
 ```
 
+### Claude Code Integration
+
+GamePadCC integrates with Claude Code via hooks. When Claude starts processing, the lightbar turns blue. When it finishes, green. On error, red. After 30 seconds of inactivity, it fades back to orange (idle).
+
+**Setup:**
+
+1. Copy the hook script:
+
+```bash
+mkdir -p ~/.claude/hooks
+cp hooks/gamepadcc-state.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/gamepadcc-state.sh
+```
+
+2. Add hooks to `~/.claude/settings.json` (merge with existing config):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/hooks/gamepadcc-state.sh" }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/hooks/gamepadcc-state.sh" }] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/hooks/gamepadcc-state.sh" }] }
+    ]
+  }
+}
+```
+
+The hook script auto-detects whether it's running from Windows (Git Bash) or WSL and writes to the correct state file path.
+
 No setup required beyond plugging in the controller.
