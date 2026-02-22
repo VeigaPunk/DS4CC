@@ -1,6 +1,5 @@
-# Ensure shell, Python, and JS scripts use LF line endings
+# Ensure shell and Python scripts use LF line endings
 hooks/*.sh text eol=lf
 hooks/codex/*.sh text eol=lf
 hooks/codex/*.py text eol=lf
-hooks/opencode/*.js text eol=lf
 install-hooks.sh text eol=lf

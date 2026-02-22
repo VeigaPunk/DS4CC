@@ -1,6 +1,5 @@
 mod codex_setup;
 mod config;
-mod opencode_setup;
 mod controller;
 mod crc32;
 mod hid;
@@ -44,11 +43,6 @@ async fn main() {
     // Auto-setup Codex hook bridge via WSL
     if cfg.codex.enabled {
         codex_setup::setup();
-    }
-
-    // Auto-setup OpenCode plugin via WSL
-    if cfg.opencode.enabled {
-        opencode_setup::setup();
     }
 
     // Tray icon

@@ -11,9 +11,8 @@ Windows daemon that bridges DualSense/DS4 controllers with CLI coding tools (Cla
 - **Tmux auto-detection** queries the running tmux server via WSL for prefix and key bindings
 - **State-driven lightbar** reflects agent state (idle/working/done/error) with smooth pulse animations
 - **Haptic rumble patterns** on state transitions (done = double tap, error = buzz)
-- **Multi-agent aggregation** supports concurrent Claude Code + Codex + OpenCode sessions with priority-based state
+- **Multi-agent aggregation** supports concurrent Claude Code + Codex sessions with priority-based state
 - **Codex hook bridge** auto-deployed to WSL on startup (Python daemon that tails JSONL session files)
-- **OpenCode plugin** auto-deployed to WSL on startup (native JS plugin, no external daemon)
 - **Claude Code hooks** installed via `install-hooks.sh`
 
 ## Supported Controllers
@@ -135,28 +134,6 @@ To disable auto-setup, add to your config:
 enabled = false
 ```
 
-## OpenCode Integration
-
-The OpenCode plugin is **auto-deployed on daemon startup** — no manual setup required. When the daemon starts:
-
-1. Checks if OpenCode is installed in WSL (`~/.config/opencode/` or `opencode` command)
-2. Deploys the native JS plugin to `~/.config/opencode/plugins/`
-
-Unlike Codex (which needs a separate bridge daemon), OpenCode has a first-class plugin system. The plugin runs inside OpenCode itself and listens for session events in real-time:
-
-| OpenCode Event              | Mapped Hook            |
-|-----------------------------|------------------------|
-| `session.status` → active   | UserPromptSubmit       |
-| `session.status` → idle     | Stop                   |
-| `session.status` → error    | PostToolUseFailure     |
-| `tool.execute.before`        | UserPromptSubmit       |
-
-To disable auto-setup, add to your config:
-```toml
-[opencode]
-enabled = false
-```
-
 ## Configuration
 
 All settings are optional. Create `%APPDATA%\gamepadcc\config.toml` to override:
@@ -181,9 +158,6 @@ r2 = "kill-window"
 square = "new-window"
 
 [codex]
-enabled = true
-
-[opencode]
 enabled = true
 
 [lightbar.idle]
@@ -224,5 +198,4 @@ tray.rs              System tray icon with profile indicator
 tmux_detect.rs       Auto-detect tmux prefix + key bindings via WSL
 wsl.rs               Shared WSL command execution utility
 codex_setup.rs       Auto-deploy Codex hook scripts to WSL
-opencode_setup.rs    Auto-deploy OpenCode plugin to WSL
 ```
