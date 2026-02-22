@@ -82,32 +82,10 @@ GamePadCC integrates with Claude Code via hooks. When Claude starts processing, 
 
 **Setup:**
 
-1. Copy the hook script:
-
 ```bash
-mkdir -p ~/.claude/hooks
-cp hooks/gamepadcc-state.sh ~/.claude/hooks/
-chmod +x ~/.claude/hooks/gamepadcc-state.sh
+bash install-hooks.sh
 ```
 
-2. Add hooks to `~/.claude/settings.json` (merge with existing config):
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/hooks/gamepadcc-state.sh" }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/hooks/gamepadcc-state.sh" }] }
-    ],
-    "PostToolUseFailure": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "~/.claude/hooks/gamepadcc-state.sh" }] }
-    ]
-  }
-}
-```
-
-The hook script auto-detects whether it's running from Windows (Git Bash) or WSL and writes to the correct state file path.
+This installs the hook script to `~/.claude/hooks/` and merges the hooks config into `~/.claude/settings.json`. Run it from both Windows (Git Bash) and WSL if you use both. Restart Claude Code after installing.
 
 No setup required beyond plugging in the controller.
