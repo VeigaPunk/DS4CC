@@ -27,7 +27,7 @@ async fn main() {
     log::info!("GamePadCC v2 starting...");
 
     let cfg = config::Config::load();
-    log::info!("State file: {}", cfg.state_file);
+    log::info!("State dir: {}", cfg.state_dir);
 
     // Initialize HID
     let mut api = match hidapi::HidApi::new() {
@@ -41,12 +41,13 @@ async fn main() {
     // State channel (persists across reconnections)
     let (state_tx, state_rx) = watch::channel(AgentState::Idle);
 
-    // Spawn state file poller (runs independently of controller)
-    let state_path = PathBuf::from(&cfg.state_file);
+    // Spawn state poller (scans gamepadcc_agent_* files in state_dir)
+    let state_dir = PathBuf::from(&cfg.state_dir);
     let poll_ms = cfg.poll_interval_ms;
     let idle_timeout_s = cfg.idle_timeout_s;
+    let stale_timeout_s = cfg.stale_timeout_s;
     tokio::spawn(async move {
-        state::poll_state_file(state_path, poll_ms, idle_timeout_s, state_tx).await;
+        state::poll_state_file(state_dir, poll_ms, idle_timeout_s, stale_timeout_s, state_tx).await;
     });
 
     // Main connection loop — reconnects on disconnect

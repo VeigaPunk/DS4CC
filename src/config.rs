@@ -9,10 +9,13 @@ use serde::Deserialize;
 pub struct Config {
     pub lightbar: LightbarConfig,
     pub buttons: ButtonConfig,
-    pub state_file: String,
+    /// Directory where agent state files are written (gamepadcc_agent_*)
+    pub state_dir: String,
     pub poll_interval_ms: u64,
     /// Seconds after "done" before auto-transitioning to "idle" (0 = disabled)
     pub idle_timeout_s: u64,
+    /// Seconds before a "working" agent file is considered stale (crashed session)
+    pub stale_timeout_s: u64,
 }
 
 /// Lightbar color configuration per agent state.
@@ -56,9 +59,10 @@ impl Default for Config {
         Self {
             lightbar: LightbarConfig::default(),
             buttons: ButtonConfig::default(),
-            state_file: default_state_file_path(),
+            state_dir: default_state_dir(),
             poll_interval_ms: 500, // 2Hz
             idle_timeout_s: 30,
+            stale_timeout_s: 600, // 10 minutes
         }
     }
 }
@@ -92,11 +96,11 @@ impl Default for ButtonConfig {
     }
 }
 
-fn default_state_file_path() -> String {
+fn default_state_dir() -> String {
     if let Ok(temp) = std::env::var("TEMP") {
-        format!("{temp}\\gamepadcc_state")
+        temp
     } else {
-        r"C:\Temp\gamepadcc_state".into()
+        r"C:\Temp".into()
     }
 }
 
