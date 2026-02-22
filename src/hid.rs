@@ -128,4 +128,5 @@ impl HidHandle {
             }
         }
     }
+
 }

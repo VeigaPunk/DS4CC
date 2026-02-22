@@ -4,9 +4,9 @@
 # The daemon aggregates all agent files to determine lightbar color.
 #
 # "done" only fires if the task took longer than the threshold.
-# Set GAMEPADCC_DONE_THRESHOLD_S to override (default: 600 = 10 minutes).
+# Set GAMEPADCC_DONE_THRESHOLD_S to override (default: 300 = 5 minutes).
 
-DONE_THRESHOLD_S="${GAMEPADCC_DONE_THRESHOLD_S:-600}"
+DONE_THRESHOLD_S="${GAMEPADCC_DONE_THRESHOLD_S:-300}"
 
 INPUT=$(cat)
 EVENT=$(echo "$INPUT" | grep -o '"hook_event_name":"[^"]*"' | cut -d'"' -f4)
