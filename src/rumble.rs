@@ -1,0 +1,70 @@
+/// Rumble engine: fires haptic patterns on state transitions.
+///
+/// Working → Done: two short pulses (notification feel)
+/// Any → Error: single strong pulse
+
+use crate::state::AgentState;
+use tokio::time::{sleep, Duration};
+
+/// A rumble command: intensity (0-255) for left and right motors, plus duration.
+#[derive(Debug, Clone, Copy)]
+pub struct RumbleStep {
+    pub left: u8,
+    pub right: u8,
+    pub duration_ms: u64,
+}
+
+/// Determine the rumble pattern for a state transition.
+/// Returns None if no rumble should fire.
+pub fn pattern_for_transition(from: AgentState, to: AgentState) -> Option<Vec<RumbleStep>> {
+    match (from, to) {
+        (AgentState::Working, AgentState::Done) => Some(vec![
+            RumbleStep { left: 180, right: 180, duration_ms: 120 },
+            RumbleStep { left: 0, right: 0, duration_ms: 100 }, // pause
+            RumbleStep { left: 180, right: 180, duration_ms: 120 },
+        ]),
+        (_, AgentState::Error) => Some(vec![
+            RumbleStep { left: 255, right: 255, duration_ms: 300 },
+        ]),
+        _ => None,
+    }
+}
+
+/// Execute a rumble pattern by calling `set_rumble` for each step.
+/// `set_rumble` receives (left_intensity, right_intensity) and should write
+/// the output report to the controller.
+pub async fn play_pattern<F>(pattern: &[RumbleStep], mut set_rumble: F)
+where
+    F: FnMut(u8, u8),
+{
+    for step in pattern {
+        set_rumble(step.left, step.right);
+        sleep(Duration::from_millis(step.duration_ms)).await;
+    }
+    // Always end with motors off
+    set_rumble(0, 0);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn done_transition_has_pattern() {
+        let pattern = pattern_for_transition(AgentState::Working, AgentState::Done);
+        assert!(pattern.is_some());
+        let steps = pattern.unwrap();
+        assert_eq!(steps.len(), 3); // pulse, pause, pulse
+    }
+
+    #[test]
+    fn error_transition_has_pattern() {
+        let pattern = pattern_for_transition(AgentState::Idle, AgentState::Error);
+        assert!(pattern.is_some());
+    }
+
+    #[test]
+    fn idle_to_working_no_rumble() {
+        assert!(pattern_for_transition(AgentState::Idle, AgentState::Working).is_none());
+    }
+}
