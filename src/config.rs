@@ -9,6 +9,8 @@ use serde::Deserialize;
 pub struct Config {
     pub lightbar: LightbarConfig,
     pub buttons: ButtonConfig,
+    pub scroll: ScrollConfig,
+    pub tmux: TmuxConfig,
     /// Directory where agent state files are written (gamepadcc_agent_*)
     pub state_dir: String,
     pub poll_interval_ms: u64,
@@ -38,6 +40,81 @@ pub struct ColorConfig {
     pub b: u8,
 }
 
+/// Right stick scroll configuration.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct ScrollConfig {
+    /// Dead zone radius around center (0-127). Values within this range are ignored.
+    pub dead_zone: u8,
+    /// Scroll speed multiplier. 1.0 = normal, 2.0 = double speed.
+    pub sensitivity: f32,
+    /// Enable horizontal scrolling (X axis).
+    pub horizontal: bool,
+}
+
+impl Default for ScrollConfig {
+    fn default() -> Self {
+        Self {
+            dead_zone: 20,
+            sensitivity: 1.0,
+            horizontal: true,
+        }
+    }
+}
+
+/// Tmux integration configuration.
+///
+/// Button values are **tmux action names** (e.g., "previous-window") by default.
+/// At startup, these are resolved to actual key combos by querying the running
+/// tmux server. If auto-detection fails, well-known tmux defaults are used.
+///
+/// You can also specify direct key combos (e.g., "p", "Shift+7") to bypass
+/// the action-name resolution — useful for custom overrides.
+///
+/// Empty strings mean "unmapped" — the button does nothing in Tmux profile.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct TmuxConfig {
+    /// Enable tmux profile (PS button cycles to it).
+    pub enabled: bool,
+    /// Auto-detect prefix and key bindings from tmux via WSL.
+    /// When true, button action names are resolved to actual keys automatically.
+    pub auto_detect: bool,
+    /// Tmux prefix key combo (e.g., "Ctrl+B"). Used as fallback if auto-detect fails.
+    pub prefix: String,
+    // Button → tmux action names or direct key combos (empty = unmapped)
+    pub l1: String,
+    pub r1: String,
+    pub l2: String,
+    pub r2: String,
+    pub l3: String,
+    pub r3: String,
+    pub square: String,
+    pub share: String,
+    pub options: String,
+    pub touchpad: String,
+}
+
+impl Default for TmuxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            auto_detect: true,
+            prefix: "Ctrl+B".into(),         // tmux default, overridden by auto-detect
+            l1: "previous-window".into(),
+            r1: "next-window".into(),
+            l2: "".into(),                    // unmapped
+            r2: "".into(),                    // unmapped
+            l3: "".into(),                    // unmapped
+            r3: "kill-window".into(),
+            square: "new-window".into(),
+            share: "".into(),                 // unmapped
+            options: "".into(),               // unmapped
+            touchpad: "".into(),              // unmapped
+        }
+    }
+}
+
 /// Button mapping configuration.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
@@ -59,6 +136,8 @@ impl Default for Config {
         Self {
             lightbar: LightbarConfig::default(),
             buttons: ButtonConfig::default(),
+            scroll: ScrollConfig::default(),
+            tmux: TmuxConfig::default(),
             state_dir: default_state_dir(),
             poll_interval_ms: 500, // 2Hz
             idle_timeout_s: 30,

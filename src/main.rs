@@ -8,6 +8,8 @@ mod mapper;
 mod output;
 mod rumble;
 mod state;
+mod tmux_detect;
+mod tray;
 
 use crate::controller::ConnectionType;
 use crate::output::OutputState;
@@ -28,6 +30,16 @@ async fn main() {
 
     let cfg = config::Config::load();
     log::info!("State dir: {}", cfg.state_dir);
+
+    // Auto-detect tmux configuration (prefix + key bindings) via WSL
+    let tmux_detected = if cfg.tmux.auto_detect && cfg.tmux.enabled {
+        tmux_detect::detect()
+    } else {
+        None
+    };
+
+    // Tray icon
+    let tray_tx = tray::spawn(mapper::Profile::Default);
 
     // Initialize HID
     let mut api = match hidapi::HidApi::new() {
@@ -98,7 +110,7 @@ async fn main() {
         });
 
         // Run input loop — returns when device disconnects
-        run_input_loop(handle, ct, conn).await;
+        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.tmux, tmux_detected.as_ref(), &tray_tx).await;
 
         // Device disconnected — cancel output task and reconnect
         output_task.abort();
@@ -113,11 +125,16 @@ async fn run_input_loop(
     handle: hid::HidHandle,
     ct: controller::ControllerType,
     conn: controller::ConnectionType,
+    scroll_cfg: &config::ScrollConfig,
+    tmux_cfg: &config::TmuxConfig,
+    tmux_detected: Option<&tmux_detect::TmuxDetected>,
+    tray_tx: &std::sync::mpsc::Sender<tray::TrayCmd>,
 ) {
-    let mut mapper_state = mapper::MapperState::default();
+    let mut mapper_state = mapper::MapperState::new(scroll_cfg, tmux_cfg, tmux_detected);
     let mut buf = [0u8; 128];
     let mut consecutive_errors = 0u32;
     let mut first_report = true;
+    let mut last_profile = mapper_state.profile();
 
     loop {
         match handle.read(&mut buf) {
@@ -152,11 +169,18 @@ async fn run_input_loop(
                 match input::parse(ct, conn, data) {
                     Ok(unified) => {
                         consecutive_errors = 0;
-                        let actions = mapper_state.update(&unified.buttons);
+                        let actions = mapper_state.update(&unified);
                         for action in &actions {
                             #[cfg(windows)]
                             mapper::execute_action(action);
                             log::debug!("Action: {action:?}");
+                        }
+
+                        // Update tray icon on profile change
+                        let current_profile = mapper_state.profile();
+                        if current_profile != last_profile {
+                            let _ = tray_tx.send(tray::TrayCmd::SetProfile(current_profile));
+                            last_profile = current_profile;
                         }
                     }
                     Err(e) => {

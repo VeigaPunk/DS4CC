@@ -67,13 +67,25 @@ pub struct ButtonState {
 }
 
 /// Normalized input from any supported controller.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct UnifiedInput {
     pub left_stick: (u8, u8),
     pub right_stick: (u8, u8),
     pub l2_analog: u8,
     pub r2_analog: u8,
     pub buttons: ButtonState,
+}
+
+impl Default for UnifiedInput {
+    fn default() -> Self {
+        Self {
+            left_stick: (128, 128),  // center
+            right_stick: (128, 128), // center
+            l2_analog: 0,
+            r2_analog: 0,
+            buttons: ButtonState::default(),
+        }
+    }
 }
 
 /// Parse result.
