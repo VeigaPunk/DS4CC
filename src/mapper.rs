@@ -12,6 +12,7 @@
 ///   Square   → Spawn new session (custom action)
 ///   L1       → Shift+Alt+Tab (previous window)
 ///   R1       → Alt+Tab (next window)
+///   L2       → Ctrl+Win
 ///   R2       → Ctrl+C
 ///   L3       → Ctrl+T
 ///   R3       → Ctrl+P
@@ -19,6 +20,7 @@
 /// Tmux profile (auto-detected from tmux config):
 ///   L1       → tmux prefix + previous-window key
 ///   R1       → tmux prefix + next-window key
+///   L2       → Ctrl+Win (hold)
 ///   R2       → tmux prefix + kill-window key
 ///   R3       → Ctrl+P
 ///   Square   → tmux prefix + new-window key
@@ -52,6 +54,7 @@ pub enum VKey {
     Alt,
     Shift,
     Control,
+    Win,
     // Letter keys
     A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
     // Digit keys
@@ -85,6 +88,7 @@ impl VKey {
             VKey::Alt => VK_MENU,
             VKey::Shift => VK_SHIFT,
             VKey::Control => VK_CONTROL,
+            VKey::Win => 0x5B,  // VK_LWIN
             VKey::A => 0x41, VKey::B => 0x42, VKey::C => 0x43, VKey::D => 0x44,
             VKey::E => 0x45, VKey::F => 0x46, VKey::G => 0x47, VKey::H => 0x48,
             VKey::I => 0x49, VKey::J => 0x4A, VKey::K => 0x4B, VKey::L => 0x4C,
@@ -125,6 +129,7 @@ impl VKey {
             "alt" => Some(VKey::Alt),
             "shift" => Some(VKey::Shift),
             "ctrl" | "control" => Some(VKey::Control),
+            "win" | "windows" | "super" | "meta" => Some(VKey::Win),
             "a" => Some(VKey::A), "b" => Some(VKey::B), "c" => Some(VKey::C),
             "d" => Some(VKey::D), "e" => Some(VKey::E), "f" => Some(VKey::F),
             "g" => Some(VKey::G), "h" => Some(VKey::H), "i" => Some(VKey::I),
@@ -183,6 +188,10 @@ impl std::fmt::Display for Profile {
 pub enum Action {
     /// Press and release a key combo (modifiers held, main key pressed+released, modifiers released).
     KeyCombo(Vec<VKey>),
+    /// Hold keys down (sent on button press, released on button release).
+    KeyDown(Vec<VKey>),
+    /// Release held keys.
+    KeyUp(Vec<VKey>),
     /// Sequence of key combos with a delay between each (for tmux prefix+key).
     KeySequence(Vec<Vec<VKey>>),
     /// Mouse scroll event. Values in wheel-delta units (positive = up/right).
@@ -457,6 +466,12 @@ impl MapperState {
                 on_press!(square, Action::Custom("new_session".into()));
                 on_press!(l1, Action::KeyCombo(vec![VKey::Shift, VKey::Alt, VKey::Tab]));
                 on_press!(r1, Action::KeyCombo(vec![VKey::Alt, VKey::Tab]));
+                // L2: hold Ctrl+Win while button is held
+                if current.l2 && !self.prev.l2 {
+                    actions.push(Action::KeyDown(vec![VKey::Control, VKey::Win]));
+                } else if !current.l2 && self.prev.l2 {
+                    actions.push(Action::KeyUp(vec![VKey::Control, VKey::Win]));
+                }
                 on_press!(r2, Action::KeyCombo(vec![VKey::Control, VKey::C]));
                 on_press!(l3, Action::KeyCombo(vec![VKey::Control, VKey::T]));
                 on_press!(r3, Action::KeyCombo(vec![VKey::Control, VKey::P]));
@@ -478,7 +493,12 @@ impl MapperState {
                 on_press_tmux!(l1, l1);
                 on_press_tmux!(r1, r1);
                 on_press_tmux!(square, square);
-                on_press_tmux!(l2, l2);
+                // L2: hold Ctrl+Win while button is held
+                if current.l2 && !self.prev.l2 {
+                    actions.push(Action::KeyDown(vec![VKey::Control, VKey::Win]));
+                } else if !current.l2 && self.prev.l2 {
+                    actions.push(Action::KeyUp(vec![VKey::Control, VKey::Win]));
+                }
                 on_press_tmux!(r2, r2);
                 on_press!(l3, Action::KeyCombo(vec![VKey::Control, VKey::T]));
                 on_press!(r3, Action::KeyCombo(vec![VKey::Control, VKey::P]));
@@ -609,6 +629,38 @@ pub fn send_key_combo(keys: &[VKey]) {
     }
 }
 
+/// Press keys down (hold). Call send_key_up to release.
+#[cfg(windows)]
+pub fn send_key_down(keys: &[VKey]) {
+    if keys.is_empty() {
+        return;
+    }
+    let inputs: Vec<INPUT> = keys.iter().map(|k| make_key_input(k.code(), 0)).collect();
+    unsafe {
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_ptr(),
+            std::mem::size_of::<INPUT>() as i32,
+        );
+    }
+}
+
+/// Release held keys (reverse order for proper modifier release).
+#[cfg(windows)]
+pub fn send_key_up(keys: &[VKey]) {
+    if keys.is_empty() {
+        return;
+    }
+    let inputs: Vec<INPUT> = keys.iter().rev().map(|k| make_key_input(k.code(), KEYEVENTF_KEYUP)).collect();
+    unsafe {
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_ptr(),
+            std::mem::size_of::<INPUT>() as i32,
+        );
+    }
+}
+
 /// Send a sequence of key combos with a delay between each (e.g., tmux prefix + action).
 #[cfg(windows)]
 pub fn send_key_sequence(combos: &[Vec<VKey>], delay_ms: u64) {
@@ -681,6 +733,8 @@ fn make_mouse_input(flags: u32, wheel_delta: i32) -> INPUT {
 pub fn execute_action(action: &Action) {
     match action {
         Action::KeyCombo(keys) => send_key_combo(keys),
+        Action::KeyDown(keys) => send_key_down(keys),
+        Action::KeyUp(keys) => send_key_up(keys),
         Action::KeySequence(combos) => send_key_sequence(combos, 10),
         Action::Scroll { horizontal, vertical } => send_scroll(*horizontal, *vertical),
         Action::Custom(name) => {
@@ -946,7 +1000,6 @@ mod tests {
 
         // These buttons are unmapped in the default tmux config
         let unmapped: Vec<fn(&mut UnifiedInput)> = vec![
-            |i| i.buttons.l2 = true,
             |i| i.buttons.share = true,
             |i| i.buttons.options = true,
             |i| i.buttons.touchpad = true,
