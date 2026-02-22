@@ -66,4 +66,47 @@ else
     exit 1
 fi
 
+# ── Codex hook bridge (optional) ──────────────────────────────────────
+
+CODEX_DIR="$HOME/.codex"
+if [ -d "$CODEX_DIR" ]; then
+    echo ""
+    echo "Codex detected — installing hook bridge..."
+    CODEX_HOOK_DIR="$CODEX_DIR/hooks"
+    mkdir -p "$CODEX_HOOK_DIR"
+
+    # Copy all Codex hook scripts
+    CODEX_SRC="$SCRIPT_DIR/hooks/codex"
+    if [ -d "$CODEX_SRC" ]; then
+        for f in codex-hook-bridge.py gamepadcc-state.sh start.sh stop.sh status.sh install-from-claude.sh; do
+            if [ -f "$CODEX_SRC/$f" ]; then
+                cp "$CODEX_SRC/$f" "$CODEX_HOOK_DIR/$f"
+                sed -i 's/\r$//' "$CODEX_HOOK_DIR/$f" 2>/dev/null || true
+                chmod +x "$CODEX_HOOK_DIR/$f"
+            fi
+        done
+        echo "Installed Codex hook scripts to $CODEX_HOOK_DIR/"
+
+        # Deploy hooks.json only if not already present
+        CODEX_HOOKS_JSON="$CODEX_DIR/hooks.json"
+        if [ ! -f "$CODEX_HOOKS_JSON" ]; then
+            cp "$CODEX_SRC/hooks.json" "$CODEX_HOOKS_JSON"
+            sed -i 's/\r$//' "$CODEX_HOOKS_JSON" 2>/dev/null || true
+            echo "Installed $CODEX_HOOKS_JSON"
+        else
+            echo "hooks.json already exists, not overwriting"
+        fi
+
+        echo ""
+        echo "To start the Codex hook bridge:"
+        echo "  $CODEX_HOOK_DIR/start.sh"
+    else
+        echo "Warning: hooks/codex/ directory not found in repo. Skipping Codex setup."
+    fi
+else
+    echo ""
+    echo "(Codex not detected — skipping Codex hook bridge setup)"
+fi
+
+echo ""
 echo "Done. Restart Claude Code for hooks to take effect."

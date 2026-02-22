@@ -1,3 +1,4 @@
+mod codex_setup;
 mod config;
 mod controller;
 mod crc32;
@@ -10,6 +11,7 @@ mod rumble;
 mod state;
 mod tmux_detect;
 mod tray;
+mod wsl;
 
 use crate::controller::ConnectionType;
 use crate::output::OutputState;
@@ -37,6 +39,11 @@ async fn main() {
     } else {
         None
     };
+
+    // Auto-setup Codex hook bridge via WSL
+    if cfg.codex.enabled {
+        codex_setup::setup();
+    }
 
     // Tray icon
     let tray_tx = tray::spawn(mapper::Profile::Default);

@@ -7,6 +7,7 @@
 /// Falls back gracefully if tmux isn't running or WSL isn't available.
 
 use crate::mapper::VKey;
+use crate::wsl::run_wsl;
 use std::collections::HashMap;
 
 /// Auto-detected tmux configuration.
@@ -50,21 +51,6 @@ pub fn detect() -> Option<TmuxDetected> {
     log::info!("Detected {} tmux key bindings (took {elapsed:?})", actions.len());
 
     Some(TmuxDetected { prefix, actions })
-}
-
-// ── WSL command execution ────────────────────────────────────────────
-
-fn run_wsl(cmd: &str) -> Option<String> {
-    let output = std::process::Command::new("wsl")
-        .args(["-e", "bash", "-lc", cmd])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 // ── Prefix detection ─────────────────────────────────────────────────
