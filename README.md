@@ -1,91 +1,201 @@
 # GamePadCC v2
 
-Windows daemon that bridges DualSense/DS4 controllers with CLI tools.
+Windows daemon that bridges DualSense/DS4 controllers with CLI coding tools (Claude Code, Codex). Turns your controller into a full navigation device with state-driven lightbar feedback, tmux integration, and right-stick scrolling.
 
-## How It Works
+## Features
 
-### Build & Run
+- **Button-to-keystroke mapping** via Windows `SendInput` with rising-edge detection
+- **D-pad with two-frame confirmation + auto-repeat** (filters single-frame glitches)
+- **Right stick scroll** with configurable dead zone, sensitivity, and horizontal support
+- **Two profiles** (Default + Tmux) toggled by PS button, with system tray indicator
+- **Tmux auto-detection** queries the running tmux server via WSL for prefix and key bindings
+- **State-driven lightbar** reflects agent state (idle/working/done/error) with smooth pulse animations
+- **Haptic rumble patterns** on state transitions (done = double tap, error = buzz)
+- **Multi-agent aggregation** supports concurrent Claude Code + Codex sessions with priority-based state
+- **Codex hook bridge** auto-deployed to WSL on startup (Python daemon that tails JSONL session files)
+- **Claude Code hooks** installed via `install-hooks.sh`
+
+## Supported Controllers
+
+| Controller          | USB | Bluetooth |
+|---------------------|-----|-----------|
+| DualSense           | Yes | Yes       |
+| DualSense Edge      | Yes | Yes       |
+| DualShock 4 v1      | Yes | Yes       |
+| DualShock 4 v2      | Yes | Yes       |
+
+## Build & Run
 
 ```
-cargo run --release
+cargo build --release
+target\release\gamepadcc.exe
 ```
 
-Compiles to `target/release/gamepadcc.exe`. You can also run the `.exe` directly.
+No config file required — sensible defaults work out of the box.
 
-### Startup Sequence
+## Button Mapping
 
-1. **Logger init** — `env_logger` starts, defaults to `info` level
-2. **Config load** — Reads `%APPDATA%\gamepadcc\config.toml`. If the file doesn't exist, defaults kick in (no config file needed)
-3. **HID API init** — Enumerates USB/BT devices
-4. **State file poller spawns** — A tokio task polls `%TEMP%\gamepadcc_state` every 500ms, parsing its contents as `idle`/`working`/`done`/`error` and broadcasting changes via a `watch` channel
-5. **Connection loop** (runs forever):
-   - Scans for a DualSense/DS4 by VID/PID + usage page filtering
-   - If not found, retries every 2 seconds
-   - Once found, opens the device in non-blocking mode
-   - If Bluetooth, activates extended mode via feature report
-   - Spawns an **output task** (lightbar + rumble at ~30fps)
-   - Runs the **input loop** on the main task (reads HID reports, parses buttons, fires keystrokes)
-   - When the device disconnects, the input loop returns, the output task is aborted, and it loops back to scanning
+### Always Active (Both Profiles)
 
-### State-Driven Lightbar
+| Button       | Action                          |
+|--------------|---------------------------------|
+| Cross        | Enter                           |
+| Circle       | Escape                          |
+| Triangle     | Tab                             |
+| D-pad        | Arrow keys (with auto-repeat)   |
+| Right stick  | Mouse scroll (vertical + horizontal) |
+| PS           | Cycle profile (Default / Tmux)  |
 
-An external tool (like Claude Code) writes a string (`idle`, `working`, `done`, `error`) to `%TEMP%\gamepadcc_state`. The poller picks it up, the output loop maps it to an RGB color, and sends it to the controller every 33ms.
+### Default Profile
 
-| State     | Color         |
-|-----------|---------------|
-| `idle`    | Orange        |
-| `working` | Blue (pulse)  |
-| `done`    | Green         |
-| `error`   | Red           |
+| Button  | Action            |
+|---------|-------------------|
+| Square  | New session       |
+| L1      | Shift+Alt+Tab (previous window) |
+| R1      | Alt+Tab (next window)           |
+| R2      | Ctrl+C            |
+| L3      | Ctrl+T            |
+| R3      | Ctrl+P            |
 
-### Button-to-Keystroke Mapping
+### Tmux Profile
 
-Each HID report is parsed into a `ButtonState`. The mapper does rising-edge detection (pressed this frame but not last frame) and calls `SendInput` with the configured key combo.
+| Button  | Action                              |
+|---------|-------------------------------------|
+| Square  | tmux prefix + new-window            |
+| L1      | tmux prefix + previous-window       |
+| R1      | tmux prefix + next-window           |
+| R2      | tmux prefix + kill-window (&)       |
+| L3      | Ctrl+T                              |
+| R3      | Ctrl+P                              |
 
-| Button   | Default Action   |
-|----------|------------------|
-| Cross    | Enter            |
-| Circle   | Escape           |
-| Square   | new_session      |
-| Triangle | Tab              |
-| L1       | Shift+Alt+Tab    |
-| R1       | Alt+Tab          |
-| D-pad    | Arrow keys       |
+Tmux bindings are auto-detected from the running tmux server via WSL. If auto-detection fails, standard tmux defaults are used. You can also override with direct key combos in the config.
 
-### Supported Controllers
+## State-Driven Lightbar
 
-- DualSense (USB + Bluetooth)
-- DualSense Edge (USB + Bluetooth)
-- DualShock 4 v1 (USB + Bluetooth)
-- DualShock 4 v2 (USB + Bluetooth)
+An external tool (Claude Code or Codex) writes state files (`gamepadcc_agent_{session_id}`) to `%TEMP%`. The daemon polls these every 500ms and drives the lightbar accordingly.
 
-### Configuration
+| State     | Color         | Behavior      |
+|-----------|---------------|---------------|
+| `idle`    | Orange        | Solid         |
+| `working` | Blue          | Pulsing       |
+| `done`    | Green         | Solid         |
+| `error`   | Red           | Solid         |
 
-All settings are optional. Create `%APPDATA%\gamepadcc\config.toml` to override defaults:
+Multiple concurrent agent sessions are aggregated with priority: working > error > done > idle. Stale "working" agents (>10 min) are auto-pruned.
+
+## System Tray
+
+A tray icon shows the current profile with a visual indicator:
+
+- **Default** — orange accent
+- **Tmux** — green accent
+
+The icon updates in real-time as you toggle profiles with the PS button.
+
+## Claude Code Integration
+
+Install hooks to connect Claude Code's lifecycle events to the lightbar:
+
+```bash
+bash install-hooks.sh
+```
+
+This copies `gamepadcc-state.sh` to `~/.claude/hooks/` and merges hook config into `~/.claude/settings.json`. Run from Git Bash (Windows) or WSL. Restart Claude Code after installing.
+
+**Events hooked:** `UserPromptSubmit` (working), `Stop` (done), `PostToolUseFailure` (error).
+
+## Codex Integration
+
+The Codex hook bridge is **auto-deployed on daemon startup** — no manual setup required. When the daemon starts:
+
+1. Checks if `~/.codex/` exists in WSL
+2. Deploys embedded hook scripts to `~/.codex/hooks/`
+3. Starts the Python bridge daemon in a tmux session
+
+The bridge tails `~/.codex/sessions/**/*.jsonl` and maps Codex events to the same state-file system:
+
+| Codex Event            | Mapped Hook            |
+|------------------------|------------------------|
+| `user_message`         | UserPromptSubmit       |
+| `task_complete`        | Stop                   |
+| `turn_aborted`         | Stop                   |
+| `function_call_output` (non-zero exit) | PostToolUseFailure |
+
+Lifecycle management:
+```bash
+~/.codex/hooks/start.sh    # Start bridge
+~/.codex/hooks/stop.sh     # Stop bridge
+~/.codex/hooks/status.sh   # Check if running
+```
+
+To disable auto-setup, add to your config:
+```toml
+[codex]
+enabled = false
+```
+
+## Configuration
+
+All settings are optional. Create `%APPDATA%\gamepadcc\config.toml` to override:
 
 ```toml
 poll_interval_ms = 500
+idle_timeout_s = 30
+stale_timeout_s = 600
+
+[scroll]
+dead_zone = 20
+sensitivity = 1.0
+horizontal = true
+
+[tmux]
+enabled = true
+auto_detect = true
+prefix = "Ctrl+B"
+l1 = "previous-window"
+r1 = "next-window"
+r2 = "kill-window"
+square = "new-window"
+
+[codex]
+enabled = true
 
 [lightbar.idle]
 r = 255
 g = 140
 b = 0
 
-[buttons]
-cross = "Enter"
-circle = "Escape"
+[lightbar.working]
+r = 0
+g = 100
+b = 255
+
+[lightbar.done]
+r = 0
+g = 255
+b = 0
+
+[lightbar.error]
+r = 255
+g = 0
+b = 0
 ```
 
-### Claude Code Integration
+## Architecture
 
-GamePadCC integrates with Claude Code via hooks. When Claude starts processing, the lightbar turns blue. When it finishes, green. On error, red. After 30 seconds of inactivity, it fades back to orange (idle).
-
-**Setup:**
-
-```bash
-bash install-hooks.sh
 ```
-
-This installs the hook script to `~/.claude/hooks/` and merges the hooks config into `~/.claude/settings.json`. Run it from both Windows (Git Bash) and WSL if you use both. Restart Claude Code after installing.
-
-No setup required beyond plugging in the controller.
+main.rs              Startup, connection loop, input/output task orchestration
+config.rs            TOML config with serde defaults
+controller.rs        VID/PID detection, controller type + connection type enums
+hid.rs               HID device discovery, open, read/write, BT extended mode
+input.rs             Raw HID report parsing into UnifiedInput
+mapper.rs            Button mapping, profiles, d-pad repeat, right-stick scroll
+output.rs            Build HID output reports (lightbar + rumble)
+lightbar.rs          State-to-color mapping with pulse animation
+rumble.rs            Haptic patterns for state transitions
+state.rs             Multi-agent state file polling and aggregation
+tray.rs              System tray icon with profile indicator
+tmux_detect.rs       Auto-detect tmux prefix + key bindings via WSL
+wsl.rs               Shared WSL command execution utility
+codex_setup.rs       Auto-deploy Codex hook scripts to WSL
+```
