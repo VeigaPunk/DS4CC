@@ -181,6 +181,10 @@ g = 0
 b = 0
 ```
 
+## TODO
+
+- [ ] Add OpenCode plugin support (session.status events → lightbar state files)
+
 ## Architecture
 
 ```
