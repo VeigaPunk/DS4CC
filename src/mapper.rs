@@ -12,12 +12,17 @@
 ///   Square   → Spawn new session (custom action)
 ///   L1       → Shift+Alt+Tab (previous window)
 ///   R1       → Alt+Tab (next window)
+///   R2       → Ctrl+C
+///   L3       → Ctrl+T
+///   R3       → Ctrl+P
 ///
 /// Tmux profile (auto-detected from tmux config):
 ///   L1       → tmux prefix + previous-window key
 ///   R1       → tmux prefix + next-window key
-///   R3       → tmux prefix + kill-window key
+///   R2       → tmux prefix + kill-window key
+///   R3       → Ctrl+P
 ///   Square   → tmux prefix + new-window key
+///   L3       → Ctrl+T
 ///
 /// Combos are sent atomically in a single SendInput call.
 
@@ -262,9 +267,9 @@ impl Default for TmuxState {
             l1: Some(vec![VKey::P]),                   // prev window
             r1: Some(vec![VKey::N]),                   // next window
             l2: None,
-            r2: None,
+            r2: Some(vec![VKey::Shift, VKey::D7]),     // kill window (&)
             l3: None,
-            r3: Some(vec![VKey::Shift, VKey::D7]),     // kill window (&)
+            r3: None,
             square: Some(vec![VKey::C]),               // new window
             share: None,
             options: None,
@@ -452,6 +457,9 @@ impl MapperState {
                 on_press!(square, Action::Custom("new_session".into()));
                 on_press!(l1, Action::KeyCombo(vec![VKey::Shift, VKey::Alt, VKey::Tab]));
                 on_press!(r1, Action::KeyCombo(vec![VKey::Alt, VKey::Tab]));
+                on_press!(r2, Action::KeyCombo(vec![VKey::Control, VKey::C]));
+                on_press!(l3, Action::KeyCombo(vec![VKey::Control, VKey::T]));
+                on_press!(r3, Action::KeyCombo(vec![VKey::Control, VKey::P]));
             }
             Profile::Tmux => {
                 macro_rules! on_press_tmux {
@@ -472,8 +480,8 @@ impl MapperState {
                 on_press_tmux!(square, square);
                 on_press_tmux!(l2, l2);
                 on_press_tmux!(r2, r2);
-                on_press_tmux!(l3, l3);
-                on_press_tmux!(r3, r3);
+                on_press!(l3, Action::KeyCombo(vec![VKey::Control, VKey::T]));
+                on_press!(r3, Action::KeyCombo(vec![VKey::Control, VKey::P]));
                 on_press_tmux!(share, share);
                 on_press_tmux!(options, options);
                 on_press_tmux!(touchpad, touchpad);
@@ -913,7 +921,7 @@ mod tests {
         let tests: Vec<(fn(&mut UnifiedInput), Vec<VKey>)> = vec![
             (|i| i.buttons.l1 = true, vec![VKey::P]),                   // prev window
             (|i| i.buttons.r1 = true, vec![VKey::N]),                   // next window
-            (|i| i.buttons.r3 = true, vec![VKey::Shift, VKey::D7]),     // kill window (&)
+            (|i| i.buttons.r2 = true, vec![VKey::Shift, VKey::D7]),     // kill window (&)
             (|i| i.buttons.square = true, vec![VKey::C]),               // new window
         ];
 
@@ -939,8 +947,6 @@ mod tests {
         // These buttons are unmapped in the default tmux config
         let unmapped: Vec<fn(&mut UnifiedInput)> = vec![
             |i| i.buttons.l2 = true,
-            |i| i.buttons.r2 = true,
-            |i| i.buttons.l3 = true,
             |i| i.buttons.share = true,
             |i| i.buttons.options = true,
             |i| i.buttons.touchpad = true,
@@ -956,6 +962,50 @@ mod tests {
                 "Unmapped button should not fire KeySequence"
             );
         }
+    }
+
+    #[test]
+    fn r3_ctrl_p_both_profiles() {
+        // Default profile
+        let mut mapper = MapperState::default();
+        let input = input_with(|i| i.buttons.r3 = true);
+        let actions = mapper.update(&input);
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::P])),
+            "R3 should send Ctrl+P in Default profile"
+        );
+
+        // Tmux profile
+        let mut mapper = MapperState::default();
+        switch_to_tmux(&mut mapper);
+        let input = input_with(|i| i.buttons.r3 = true);
+        let actions = mapper.update(&input);
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::P])),
+            "R3 should send Ctrl+P in Tmux profile"
+        );
+    }
+
+    #[test]
+    fn l3_ctrl_t_both_profiles() {
+        // Default profile
+        let mut mapper = MapperState::default();
+        let input = input_with(|i| i.buttons.l3 = true);
+        let actions = mapper.update(&input);
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::T])),
+            "L3 should send Ctrl+T in Default profile"
+        );
+
+        // Tmux profile
+        let mut mapper = MapperState::default();
+        switch_to_tmux(&mut mapper);
+        let input = input_with(|i| i.buttons.l3 = true);
+        let actions = mapper.update(&input);
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::T])),
+            "L3 should send Ctrl+T in Tmux profile"
+        );
     }
 
     #[test]

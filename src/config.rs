@@ -105,9 +105,9 @@ impl Default for TmuxConfig {
             l1: "previous-window".into(),
             r1: "next-window".into(),
             l2: "".into(),                    // unmapped
-            r2: "".into(),                    // unmapped
+            r2: "kill-window".into(),
             l3: "".into(),                    // unmapped
-            r3: "kill-window".into(),
+            r3: "".into(),                    // unmapped (R3 = Ctrl+P direct)
             square: "new-window".into(),
             share: "".into(),                 // unmapped
             options: "".into(),               // unmapped
