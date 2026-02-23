@@ -283,7 +283,7 @@ fn set_auto_start(enabled: bool) {
 fn profile_color(profile: Profile) -> (u8, u8, u8) {
     match profile {
         Profile::Default => (40, 40, 40),
-        Profile::Tmux => (0, 190, 0),
+        Profile::Tmux    => (0, 190, 0),
     }
 }
 

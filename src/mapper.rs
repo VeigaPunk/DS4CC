@@ -9,7 +9,7 @@
 ///   PS       → Cycle profiles (Default ↔ Tmux)
 ///
 /// Default profile:
-///   Square   → Spawn new session (custom action)
+///   Square   → OpenCode new session (auto-detected or ctrl+x then n)
 ///   L1       → Shift+Alt+Tab (previous window)
 ///   R1       → Alt+Tab (next window)
 ///   L2       → Ctrl+Win
@@ -28,8 +28,9 @@
 ///
 /// Combos are sent atomically in a single SendInput call.
 
-use crate::config::{ScrollConfig, TmuxConfig};
+use crate::config::{OpenCodeConfig, ScrollConfig, TmuxConfig};
 use crate::input::{ButtonState, DPad, UnifiedInput};
+use crate::opencode_detect::{ActionBinding, OpenCodeDetected};
 use crate::tmux_detect::TmuxDetected;
 use std::time::Instant;
 
@@ -72,6 +73,8 @@ pub enum VKey {
     Period,       // VK_OEM_PERIOD (.>)
     Backtick,     // VK_OEM_3 (`~)
     Space,        // VK_SPACE
+    // Function keys
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
 }
 
 #[cfg(windows)]
@@ -111,6 +114,9 @@ impl VKey {
             VKey::Period => 0xBE,         // VK_OEM_PERIOD
             VKey::Backtick => 0xC0,       // VK_OEM_3
             VKey::Space => 0x20,          // VK_SPACE
+            VKey::F1  => 0x70, VKey::F2  => 0x71, VKey::F3  => 0x72, VKey::F4  => 0x73,
+            VKey::F5  => 0x74, VKey::F6  => 0x75, VKey::F7  => 0x76, VKey::F8  => 0x77,
+            VKey::F9  => 0x78, VKey::F10 => 0x79, VKey::F11 => 0x7A, VKey::F12 => 0x7B,
         }
     }
 }
@@ -155,6 +161,10 @@ impl VKey {
             "." | "period" => Some(VKey::Period),
             "`" | "backtick" => Some(VKey::Backtick),
             "space" => Some(VKey::Space),
+            "f1"  => Some(VKey::F1),  "f2"  => Some(VKey::F2),  "f3"  => Some(VKey::F3),
+            "f4"  => Some(VKey::F4),  "f5"  => Some(VKey::F5),  "f6"  => Some(VKey::F6),
+            "f7"  => Some(VKey::F7),  "f8"  => Some(VKey::F8),  "f9"  => Some(VKey::F9),
+            "f10" => Some(VKey::F10), "f11" => Some(VKey::F11), "f12" => Some(VKey::F12),
             _ => None,
         }
     }
@@ -165,7 +175,15 @@ pub fn parse_key_combo(s: &str) -> Option<Vec<VKey>> {
     s.split('+').map(|part| VKey::from_name(part.trim())).collect()
 }
 
-/// Active input profile. PS button cycles between these.
+/// Active input profile. PS button cycles between Default and Tmux.
+///
+/// TODO: Add a third "Agent" profile that merges OpenCode + tmux shortcuts onto
+/// buttons that make sense for AI-assisted coding sessions — e.g. session nav on
+/// L1/R1 (OpenCode sessions), window nav on shoulder combos (tmux windows), new
+/// session/window on Square (OpenCode) / Triangle (tmux), etc. The resolved
+/// `OpenCodeState` and `TmuxState` are both already computed inside `MapperState`
+/// and ready to dispatch; only the profile variant, PS cycling, LED slot, and
+/// tray color need to be wired up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Profile {
     /// L2-Touchpad unmapped.
@@ -178,7 +196,7 @@ impl std::fmt::Display for Profile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Profile::Default => f.write_str("default"),
-            Profile::Tmux => f.write_str("tmux"),
+            Profile::Tmux    => f.write_str("tmux"),
         }
     }
 }
@@ -372,6 +390,136 @@ impl TmuxState {
     }
 }
 
+// ── OpenCode hardcoded defaults ───────────────────────────────────────
+
+/// Well-known OpenCode action → default binding fallback.
+/// Used when auto-detection is unavailable or an action has no detected binding.
+/// These mirror OpenCode's shipped defaults; users can override via config.
+fn default_binding_for_opencode_action(action: &str) -> Option<ActionBinding> {
+    match action {
+        // Session navigation (ctrl+[ / ctrl+] are common TUI conventions)
+        "session:prev" | "app:prev-session" | "app:session-prev" => {
+            Some(ActionBinding::Combo(vec![VKey::Control, VKey::LeftBracket]))
+        }
+        "session:next" | "app:next-session" | "app:session-next" => {
+            Some(ActionBinding::Combo(vec![VKey::Control, VKey::RightBracket]))
+        }
+        // New session (leader + n, leader defaults to ctrl+x)
+        "app:new-session" | "app:session-new" => {
+            Some(ActionBinding::LeaderKey(vec![VKey::N]))
+        }
+        // Toggle session list sidebar
+        "app:toggle-session-list" => {
+            Some(ActionBinding::Combo(vec![VKey::Control, VKey::Shift, VKey::S]))
+        }
+        _ => None,
+    }
+}
+
+/// Resolve a button config value to an `ActionBinding` for the OpenCode profile.
+///
+/// Resolution order:
+/// 1. Empty string  → None (unmapped)
+/// 2. Auto-detected binding from opencode.json
+/// 3. Hardcoded OpenCode defaults (action name lookup)
+/// 4. Direct binding parse (e.g., "ctrl+]" or "<leader>n")
+fn resolve_opencode_button(
+    value: &str,
+    detected: Option<&OpenCodeDetected>,
+) -> Option<ActionBinding> {
+    if value.is_empty() {
+        return None;
+    }
+
+    // Try auto-detected bindings first
+    if let Some(det) = detected {
+        if let Some(binding) = det.binding_for_action(value) {
+            log::debug!("Resolved OpenCode action '{value}' from detected bindings");
+            return Some(binding.clone());
+        }
+    }
+
+    // Try hardcoded defaults for well-known OpenCode actions
+    if let Some(binding) = default_binding_for_opencode_action(value) {
+        log::debug!("Resolved OpenCode action '{value}' from hardcoded defaults");
+        return Some(binding);
+    }
+
+    // Try parsing as a direct binding string (e.g., "ctrl+]" or "<leader>n")
+    crate::opencode_detect::parse_opencode_binding(value)
+}
+
+/// Resolved OpenCode button mappings (parsed once from config strings).
+/// None = unmapped; Combo = direct keypress; LeaderKey = leader then key.
+#[derive(Clone)]
+struct OpenCodeState {
+    leader: Vec<VKey>,
+    l1: Option<ActionBinding>,
+    r1: Option<ActionBinding>,
+    l2: Option<ActionBinding>,
+    r2: Option<ActionBinding>,
+    l3: Option<ActionBinding>,
+    r3: Option<ActionBinding>,
+    square: Option<ActionBinding>,
+    share: Option<ActionBinding>,
+    options: Option<ActionBinding>,
+    touchpad: Option<ActionBinding>,
+}
+
+impl Default for OpenCodeState {
+    fn default() -> Self {
+        // ctrl+x leader, session nav on L1/R1, new-session on Square
+        Self {
+            leader: vec![VKey::Control, VKey::X],
+            l1: Some(ActionBinding::Combo(vec![VKey::Control, VKey::LeftBracket])),
+            r1: Some(ActionBinding::Combo(vec![VKey::Control, VKey::RightBracket])),
+            l2: None,
+            r2: None,
+            l3: None,
+            r3: None,
+            square: Some(ActionBinding::LeaderKey(vec![VKey::N])),
+            share: None,
+            options: None,
+            touchpad: None,
+        }
+    }
+}
+
+impl OpenCodeState {
+    fn from_config(cfg: &OpenCodeConfig, detected: Option<&OpenCodeDetected>) -> Self {
+        // Leader: prefer detected, fall back to config string, then ctrl+x
+        let leader = if cfg.auto_detect {
+            detected
+                .and_then(|d| d.leader.clone())
+                .unwrap_or_else(|| {
+                    parse_key_combo(&cfg.leader)
+                        .unwrap_or_else(|| vec![VKey::Control, VKey::X])
+                })
+        } else {
+            parse_key_combo(&cfg.leader).unwrap_or_else(|| vec![VKey::Control, VKey::X])
+        };
+
+        let det = if cfg.auto_detect { detected } else { None };
+        let resolve = |s: &str| -> Option<ActionBinding> { resolve_opencode_button(s, det) };
+
+        log::info!("OpenCode leader resolved to: {:?}", leader);
+
+        Self {
+            leader,
+            l1: resolve(&cfg.l1),
+            r1: resolve(&cfg.r1),
+            l2: resolve(&cfg.l2),
+            r2: resolve(&cfg.r2),
+            l3: resolve(&cfg.l3),
+            r3: resolve(&cfg.r3),
+            square: resolve(&cfg.square),
+            share: resolve(&cfg.share),
+            options: resolve(&cfg.options),
+            touchpad: resolve(&cfg.touchpad),
+        }
+    }
+}
+
 /// Main mapper state.
 pub struct MapperState {
     prev: ButtonState,
@@ -389,6 +537,7 @@ pub struct MapperState {
     active_profile: Profile,
     tmux_available: bool, // false = only Default profile, PS does nothing
     tmux: TmuxState,
+    opencode: OpenCodeState,
 }
 
 impl Default for MapperState {
@@ -406,21 +555,29 @@ impl Default for MapperState {
             active_profile: Profile::Default,
             tmux_available: true,
             tmux: TmuxState::default(),
+            opencode: OpenCodeState::default(),
         }
     }
 }
 
 impl MapperState {
-    /// Create a mapper with config-driven scroll and tmux settings.
-    /// If `detected` is provided, tmux prefix and action keys are auto-resolved.
-    pub fn new(scroll: &ScrollConfig, tmux: &TmuxConfig, detected: Option<&TmuxDetected>) -> Self {
+    /// Create a mapper with config-driven settings.
+    /// Detected configurations are used to resolve action-name → key bindings.
+    pub fn new(
+        scroll: &ScrollConfig,
+        tmux: &TmuxConfig,
+        tmux_detected: Option<&TmuxDetected>,
+        opencode: &OpenCodeConfig,
+        opencode_detected: Option<&OpenCodeDetected>,
+    ) -> Self {
         Self {
             scroll_dead_zone: scroll.dead_zone as i16,
             scroll_sensitivity: scroll.sensitivity,
             scroll_horizontal: scroll.horizontal,
             active_profile: Profile::Default,
             tmux_available: tmux.enabled,
-            tmux: TmuxState::from_config(tmux, detected),
+            tmux: TmuxState::from_config(tmux, tmux_detected),
+            opencode: OpenCodeState::from_config(opencode, opencode_detected),
             ..Default::default()
         }
     }
@@ -454,7 +611,7 @@ impl MapperState {
         if current.ps && !self.prev.ps && self.tmux_available {
             self.active_profile = match self.active_profile {
                 Profile::Default => Profile::Tmux,
-                Profile::Tmux => Profile::Default,
+                Profile::Tmux    => Profile::Default,
             };
             actions.push(Action::Custom(format!("profile:{}", self.active_profile)));
             log::info!("Profile switched to: {}", self.active_profile);
@@ -463,7 +620,19 @@ impl MapperState {
         // --- Profile-dependent buttons ---
         match self.active_profile {
             Profile::Default => {
-                on_press!(square, Action::Custom("new_session".into()));
+                // Square → OpenCode new session (leader + n, or whatever was auto-detected)
+                if current.square && !self.prev.square {
+                    if let Some(ref binding) = self.opencode.square {
+                        let action = match binding {
+                            ActionBinding::Combo(keys) => Action::KeyCombo(keys.clone()),
+                            ActionBinding::LeaderKey(keys) => Action::KeySequence(vec![
+                                self.opencode.leader.clone(),
+                                keys.clone(),
+                            ]),
+                        };
+                        actions.push(action);
+                    }
+                }
                 on_press!(l1, Action::KeyCombo(vec![VKey::Shift, VKey::Alt, VKey::Tab]));
                 on_press!(r1, Action::KeyCombo(vec![VKey::Alt, VKey::Tab]));
                 // L2: hold Ctrl+Win while button is held
@@ -506,6 +675,7 @@ impl MapperState {
                 on_press_tmux!(options, options);
                 on_press_tmux!(touchpad, touchpad);
             }
+
         }
 
         // --- D-pad with two-frame confirm + repeat ---
@@ -830,14 +1000,19 @@ mod tests {
     }
 
     #[test]
-    fn square_produces_custom() {
+    fn square_produces_opencode_new_session() {
         let mut mapper = MapperState::default();
         let input = input_with(|i| i.buttons.square = true);
         let actions = mapper.update(&input);
         assert_eq!(actions.len(), 1);
+        // Default OpenCode binding: leader (ctrl+x) then N
         match &actions[0] {
-            Action::Custom(name) => assert_eq!(name, "new_session"),
-            _ => panic!("Expected Custom"),
+            Action::KeySequence(seq) => {
+                assert_eq!(seq.len(), 2);
+                assert_eq!(seq[0], vec![VKey::Control, VKey::X], "Expected ctrl+x leader");
+                assert_eq!(seq[1], vec![VKey::N], "Expected N for new-session");
+            }
+            _ => panic!("Expected KeySequence(leader + n)"),
         }
     }
 
@@ -958,7 +1133,7 @@ mod tests {
         let scroll_cfg = ScrollConfig::default();
         let mut tmux_cfg = TmuxConfig::default();
         tmux_cfg.enabled = false;
-        let mut mapper = MapperState::new(&scroll_cfg, &tmux_cfg, None);
+        let mut mapper = MapperState::new(&scroll_cfg, &tmux_cfg, None, &crate::config::OpenCodeConfig::default(), None);
 
         // PS press should not switch profiles
         let ps_press = input_with(|i| i.buttons.ps = true);
@@ -1087,10 +1262,15 @@ mod tests {
     fn tmux_overrides_default_square() {
         let mut mapper = MapperState::default();
 
-        // Default profile: Square → Custom("new_session")
+        // Default profile: Square → OpenCode new session (leader + n)
         let input = input_with(|i| i.buttons.square = true);
         let actions = mapper.update(&input);
-        assert!(actions.iter().any(|a| matches!(a, Action::Custom(s) if s == "new_session")));
+        assert!(actions.iter().any(|a| matches!(
+            a,
+            Action::KeySequence(seq) if seq.len() == 2
+                && seq[0] == vec![VKey::Control, VKey::X]
+                && seq[1] == vec![VKey::N]
+        )));
 
         // Release and switch to tmux
         mapper.update(&UnifiedInput::default());

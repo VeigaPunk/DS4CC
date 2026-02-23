@@ -7,6 +7,7 @@ mod input;
 mod lightbar;
 mod mapper;
 mod mic;
+mod opencode_detect;
 mod output;
 mod rumble;
 mod state;
@@ -39,6 +40,13 @@ async fn main() {
     // Auto-detect tmux configuration (prefix + key bindings) via WSL
     let tmux_detected = if cfg.tmux.auto_detect && cfg.tmux.enabled {
         tmux_detect::detect()
+    } else {
+        None
+    };
+
+    // Auto-detect OpenCode keybinds from ~/.config/opencode/opencode.json via WSL
+    let opencode_detected = if cfg.opencode.auto_detect && cfg.opencode.enabled {
+        opencode_detect::detect()
     } else {
         None
     };
@@ -145,7 +153,7 @@ async fn main() {
         });
 
         // Run input loop — returns when device disconnects
-        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.tmux, tmux_detected.as_ref(), &tray_tx, Arc::clone(&player_leds)).await;
+        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.tmux, tmux_detected.as_ref(), &cfg.opencode, opencode_detected.as_ref(), &tray_tx, Arc::clone(&player_leds)).await;
 
         // Device disconnected — cancel output task and reconnect
         output_task.abort();
@@ -163,10 +171,18 @@ async fn run_input_loop(
     scroll_cfg: &config::ScrollConfig,
     tmux_cfg: &config::TmuxConfig,
     tmux_detected: Option<&tmux_detect::TmuxDetected>,
+    opencode_cfg: &config::OpenCodeConfig,
+    opencode_detected: Option<&opencode_detect::OpenCodeDetected>,
     tray_tx: &std::sync::mpsc::Sender<tray::TrayCmd>,
     player_leds: Arc<AtomicU8>,
 ) {
-    let mut mapper_state = mapper::MapperState::new(scroll_cfg, tmux_cfg, tmux_detected);
+    let mut mapper_state = mapper::MapperState::new(
+        scroll_cfg,
+        tmux_cfg,
+        tmux_detected,
+        opencode_cfg,
+        opencode_detected,
+    );
     let mut buf = [0u8; 128];
     let mut consecutive_errors = 0u32;
     let mut first_report = true;
