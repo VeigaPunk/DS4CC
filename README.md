@@ -183,8 +183,7 @@ PS button switches profile (shortcut mappings). System tray icon shows current p
 |---|:---:|:---:|
 | DualSense | ✓ | ✓ |
 | DualSense Edge | ✓ | ✓ |
-| DualShock 4 v1 | ✓ | ✓ |
-| DualShock 4 v2 | ✓ | ✓ |
+| DualShock 4 | WIP | WIP |
 
 Bluetooth supports all features except Microphone Input (WIP).
 
