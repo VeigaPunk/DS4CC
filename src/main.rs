@@ -197,23 +197,12 @@ async fn run_input_loop(
                             let _ = tray_tx.send(tray::TrayCmd::SetProfile(current_profile));
                             last_profile = current_profile;
 
-                            // Blink center dot twice, then settle on the new profile's LED pattern.
+                            // Instantly show the new profile's player indicator LED.
                             let target_leds = match current_profile {
                                 mapper::Profile::Default => PLAYER1_LEDS,
                                 mapper::Profile::Tmux    => PLAYER2_LEDS,
                             };
-                            let leds = Arc::clone(&player_leds);
-                            tokio::spawn(async move {
-                                const BLINK_ON: u8 = 0x04 | 0x20; // center dot, instant mode
-                                leds.store(BLINK_ON, Ordering::Relaxed);
-                                sleep(Duration::from_millis(150)).await;
-                                leds.store(0x00, Ordering::Relaxed);
-                                sleep(Duration::from_millis(100)).await;
-                                leds.store(BLINK_ON, Ordering::Relaxed);
-                                sleep(Duration::from_millis(150)).await;
-                                // Settle on the profile's persistent player indicator
-                                leds.store(target_leds, Ordering::Relaxed);
-                            });
+                            player_leds.store(target_leds, Ordering::Relaxed);
                         }
                     }
                     Err(e) => {
