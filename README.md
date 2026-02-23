@@ -69,12 +69,6 @@ Here's the real flow, no buzzwords:
    - **Input** — read buttons → send keystrokes, toggle profiles (shortcut mapping)
    - **Output** — conditional agent states → lightbar color | rumble
 
-Everything lives inside one Rust process.
-
-There is no microservice architecture. There is no event-bus abstraction layer. There is no cloud.
-
-Just loops, channels, and a controller.
-
 ---
 
 ## Core Features
