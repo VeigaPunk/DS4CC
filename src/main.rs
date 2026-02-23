@@ -202,6 +202,9 @@ async fn run_input_loop(
     }
 }
 
+/// How long the agent must stay idle before the attention rumble fires.
+const IDLE_REMINDER_MS: u64 = 3 * 60 * 1000; // 3 minutes
+
 /// Output loop: update lightbar and rumble based on state changes.
 async fn run_output_loop(
     handle: hid::HidHandle,
@@ -214,6 +217,7 @@ async fn run_output_loop(
     let mut current_state = AgentState::Idle;
     let state_entered_at = Instant::now();
     let mut state_start = state_entered_at;
+    let mut idle_rumble_fired = false; // true once the 3-min reminder has fired for this idle stretch
 
     // Set initial lightbar
     send_output(
@@ -233,6 +237,30 @@ async fn run_output_loop(
             _ = ticker.tick() => {
                 let elapsed = state_start.elapsed().as_millis() as u64;
                 send_output(&handle, ct, conn, &lightbar_cfg, current_state, elapsed, &mut bt_seq);
+
+                // Idle attention reminder: fire once after 3 minutes in idle
+                if current_state == AgentState::Idle
+                    && !idle_rumble_fired
+                    && elapsed >= IDLE_REMINDER_MS
+                {
+                    idle_rumble_fired = true;
+                    log::info!("Idle reminder rumble triggered ({}min)", elapsed / 60_000);
+                    let rumble_handle = handle.clone_handle();
+                    let rumble_ct = ct;
+                    let rumble_conn = conn;
+                    tokio::spawn(async move {
+                        let mut seq = 0u8;
+                        rumble::play_pattern(&rumble::idle_reminder_pattern(), |left, right| {
+                            let out = OutputState {
+                                rumble_left: left,
+                                rumble_right: right,
+                                ..Default::default()
+                            };
+                            let report = output::build_report(rumble_ct, rumble_conn, &out, &mut seq);
+                            rumble_handle.write(&report);
+                        }).await;
+                    });
+                }
             }
             result = state_rx.changed() => {
                 if result.is_err() {
@@ -244,6 +272,7 @@ async fn run_output_loop(
                     let old_state = current_state;
                     current_state = new_state;
                     state_start = Instant::now();
+                    idle_rumble_fired = false; // reset for new idle stretch
 
                     // Fire rumble pattern if applicable
                     if let Some(pattern) = rumble::pattern_for_transition(old_state, new_state) {

@@ -1,7 +1,8 @@
-/// Rumble engine: fires haptic patterns on state transitions.
+/// Rumble engine: fires haptic patterns on state transitions and time thresholds.
 ///
-/// Working → Done: two short pulses (notification feel)
-/// Any → Error: single strong pulse
+/// Working → Done:     two short pulses (notification feel)
+/// Any → Error:        single strong pulse
+/// Idle > 3 min:       single strong pulse (attention reminder)
 
 use crate::state::AgentState;
 use tokio::time::{sleep, Duration};
@@ -28,6 +29,11 @@ pub fn pattern_for_transition(from: AgentState, to: AgentState) -> Option<Vec<Ru
         ]),
         _ => None,
     }
+}
+
+/// Rumble pattern for the idle attention reminder (agent idle > threshold).
+pub fn idle_reminder_pattern() -> Vec<RumbleStep> {
+    vec![RumbleStep { left: 255, right: 255, duration_ms: 300 }]
 }
 
 /// Execute a rumble pattern by calling `set_rumble` for each step.
