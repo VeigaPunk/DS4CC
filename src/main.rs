@@ -205,6 +205,10 @@ async fn run_input_loop(
 /// How long the agent must stay idle before the attention rumble fires.
 const IDLE_REMINDER_MS: u64 = 3 * 60 * 1000; // 3 minutes
 
+/// Minimum working duration before the Working → Done rumble fires.
+/// Short tasks don't warrant a notification; only surface it for real work.
+const WORKING_DONE_MIN_MS: u64 = 5 * 60 * 1000; // 5 minutes
+
 /// Output loop: update lightbar and rumble based on state changes.
 async fn run_output_loop(
     handle: hid::HidHandle,
@@ -270,27 +274,49 @@ async fn run_output_loop(
                 let new_state = *state_rx.borrow();
                 if new_state != current_state {
                     let old_state = current_state;
+                    let elapsed_in_old = state_start.elapsed().as_millis() as u64;
                     current_state = new_state;
                     state_start = Instant::now();
                     idle_rumble_fired = false; // reset for new idle stretch
 
+                    // Working → Done only rumbles if the task ran long enough to be meaningful.
+                    // All other transitions fire unconditionally.
+                    let long_enough = !(old_state == AgentState::Working
+                        && new_state == AgentState::Done
+                        && elapsed_in_old < WORKING_DONE_MIN_MS);
+
+                    if long_enough {
+                        log::debug!(
+                            "Transition {:?} → {:?} after {}s",
+                            old_state, new_state, elapsed_in_old / 1000
+                        );
+                    } else {
+                        log::debug!(
+                            "Working → Done after {}s (< {}s threshold) — skipping rumble",
+                            elapsed_in_old / 1000,
+                            WORKING_DONE_MIN_MS / 1000
+                        );
+                    }
+
                     // Fire rumble pattern if applicable
-                    if let Some(pattern) = rumble::pattern_for_transition(old_state, new_state) {
-                        let rumble_handle = handle.clone_handle();
-                        let rumble_ct = ct;
-                        let rumble_conn = conn;
-                        tokio::spawn(async move {
-                            let mut seq = 0u8;
-                            rumble::play_pattern(&pattern, |left, right| {
-                                let out = OutputState {
-                                    rumble_left: left,
-                                    rumble_right: right,
-                                    ..Default::default()
-                                };
-                                let report = output::build_report(rumble_ct, rumble_conn, &out, &mut seq);
-                                rumble_handle.write(&report);
-                            }).await;
-                        });
+                    if long_enough {
+                        if let Some(pattern) = rumble::pattern_for_transition(old_state, new_state) {
+                            let rumble_handle = handle.clone_handle();
+                            let rumble_ct = ct;
+                            let rumble_conn = conn;
+                            tokio::spawn(async move {
+                                let mut seq = 0u8;
+                                rumble::play_pattern(&pattern, |left, right| {
+                                    let out = OutputState {
+                                        rumble_left: left,
+                                        rumble_right: right,
+                                        ..Default::default()
+                                    };
+                                    let report = output::build_report(rumble_ct, rumble_conn, &out, &mut seq);
+                                    rumble_handle.write(&report);
+                                }).await;
+                            });
+                        }
                     }
                 }
             }
