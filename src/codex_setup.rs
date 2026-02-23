@@ -13,7 +13,7 @@ use base64::Engine;
 // ── Embedded scripts (compiled into the binary) ─────────────────────
 
 const BRIDGE_PY: &str = include_str!("../hooks/codex/codex-hook-bridge.py");
-const STATE_SH: &str = include_str!("../hooks/codex/gamepadcc-state.sh");
+const STATE_SH: &str = include_str!("../hooks/codex/ds4cc-state.sh");
 const HOOKS_JSON: &str = include_str!("../hooks/codex/hooks.json");
 const START_SH: &str = include_str!("../hooks/codex/start.sh");
 const STOP_SH: &str = include_str!("../hooks/codex/stop.sh");
@@ -54,7 +54,7 @@ pub fn setup() -> bool {
     // Deploy managed scripts (always overwrite — these are ours)
     let managed_scripts: &[(&str, &str)] = &[
         ("codex-hook-bridge.py", BRIDGE_PY),
-        ("gamepadcc-state.sh", STATE_SH),
+        ("ds4cc-state.sh", STATE_SH),
         ("start.sh", START_SH),
         ("stop.sh", STOP_SH),
         ("status.sh", STATUS_SH),

@@ -225,9 +225,9 @@ impl Config {
 
 fn config_file_path() -> String {
     if let Ok(appdata) = std::env::var("APPDATA") {
-        format!("{appdata}\\gamepadcc\\config.toml")
+        format!("{appdata}\\ds4cc\\config.toml")
     } else {
-        "gamepadcc.toml".into()
+        "ds4cc.toml".into()
     }
 }
 

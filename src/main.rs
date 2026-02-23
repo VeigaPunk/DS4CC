@@ -31,7 +31,7 @@ async fn main() {
         .format_timestamp_millis()
         .init();
 
-    log::info!("GamePadCC v2 starting...");
+    log::info!("DS4CC v2 starting...");
 
     let cfg = config::Config::load();
     log::info!("State dir: {}", cfg.state_dir);
@@ -63,7 +63,7 @@ async fn main() {
     // State channel (persists across reconnections)
     let (state_tx, state_rx) = watch::channel(AgentState::Idle);
 
-    // Spawn state poller (scans gamepadcc_agent_* files in state_dir)
+    // Spawn state poller (scans ds4cc_agent_* files in state_dir)
     let state_dir = PathBuf::from(&cfg.state_dir);
     let poll_ms = cfg.poll_interval_ms;
     let idle_timeout_s = cfg.idle_timeout_s;

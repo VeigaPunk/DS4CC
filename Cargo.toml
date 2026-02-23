@@ -1,8 +1,8 @@
 [package]
-name = "gamepadcc"
-version = "0.1.0"
+name = "ds4cc"
+version = "2.0.0"
 edition = "2024"
-description = "Windows daemon bridging DualSense/DS4 controllers with CLI tools"
+description = "Windows daemon bridging DualSense/DS4 controllers with AI coding agents"
 
 [dependencies]
 hidapi = { version = "2.6", features = ["windows-native"] }

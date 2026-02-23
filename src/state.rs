@@ -1,6 +1,6 @@
 /// State poller: scans per-agent state files and aggregates into a single state.
 ///
-/// Each Claude Code session writes its own file: `gamepadcc_agent_<session_id>`
+/// Each Claude Code session writes its own file: `ds4cc_agent_<session_id>`
 /// containing a single word: idle | working | done | error
 ///
 /// The poller scans all matching files and applies priority:
@@ -57,10 +57,10 @@ impl std::fmt::Display for AgentState {
     }
 }
 
-/// Scan all `gamepadcc_agent_*` files in the state directory and aggregate.
+/// Scan all `ds4cc_agent_*` files in the state directory and aggregate.
 /// Ignores "working" files older than `stale_timeout`.
 fn aggregate_agent_states(state_dir: &PathBuf, stale_timeout: StdDuration) -> AgentState {
-    let pattern = "gamepadcc_agent_";
+    let pattern = "ds4cc_agent_";
     let now = SystemTime::now();
     let mut best = AgentState::Idle;
 
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn aggregate_empty_dir() {
-        let dir = std::env::temp_dir().join("gamepadcc_test_empty");
+        let dir = std::env::temp_dir().join("ds4cc_test_empty");
         let _ = std::fs::create_dir_all(&dir);
         let result = aggregate_agent_states(&dir, StdDuration::from_secs(600));
         assert_eq!(result, AgentState::Idle);
@@ -189,29 +189,29 @@ mod tests {
 
     #[test]
     fn aggregate_multiple_agents() {
-        let dir = std::env::temp_dir().join("gamepadcc_test_multi");
+        let dir = std::env::temp_dir().join("ds4cc_test_multi");
         let _ = std::fs::create_dir_all(&dir);
 
         // Agent A is working, Agent B is idle
-        std::fs::write(dir.join("gamepadcc_agent_aaa"), "working").unwrap();
-        std::fs::write(dir.join("gamepadcc_agent_bbb"), "idle").unwrap();
+        std::fs::write(dir.join("ds4cc_agent_aaa"), "working").unwrap();
+        std::fs::write(dir.join("ds4cc_agent_bbb"), "idle").unwrap();
         let result = aggregate_agent_states(&dir, StdDuration::from_secs(600));
         assert_eq!(result, AgentState::Working);
 
         // Agent A finishes (idle), Agent B still idle
-        std::fs::write(dir.join("gamepadcc_agent_aaa"), "idle").unwrap();
+        std::fs::write(dir.join("ds4cc_agent_aaa"), "idle").unwrap();
         let result = aggregate_agent_states(&dir, StdDuration::from_secs(600));
         assert_eq!(result, AgentState::Idle);
 
         // Agent A done, Agent B working → working wins
-        std::fs::write(dir.join("gamepadcc_agent_aaa"), "done").unwrap();
-        std::fs::write(dir.join("gamepadcc_agent_bbb"), "working").unwrap();
+        std::fs::write(dir.join("ds4cc_agent_aaa"), "done").unwrap();
+        std::fs::write(dir.join("ds4cc_agent_bbb"), "working").unwrap();
         let result = aggregate_agent_states(&dir, StdDuration::from_secs(600));
         assert_eq!(result, AgentState::Working);
 
         // Clean up
-        let _ = std::fs::remove_file(dir.join("gamepadcc_agent_aaa"));
-        let _ = std::fs::remove_file(dir.join("gamepadcc_agent_bbb"));
+        let _ = std::fs::remove_file(dir.join("ds4cc_agent_aaa"));
+        let _ = std::fs::remove_file(dir.join("ds4cc_agent_bbb"));
         let _ = std::fs::remove_dir(&dir);
     }
 }

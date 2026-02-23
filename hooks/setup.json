@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/gamepadcc-state.sh"
+            "command": "~/.claude/hooks/ds4cc-state.sh"
           }
         ]
       }
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/gamepadcc-state.sh"
+            "command": "~/.claude/hooks/ds4cc-state.sh"
           }
         ]
       }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/gamepadcc-state.sh"
+            "command": "~/.claude/hooks/ds4cc-state.sh"
           }
         ]
       }

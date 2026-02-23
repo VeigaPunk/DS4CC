@@ -23,7 +23,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const ICON_SIZE: u32 = 32;
-const APP_NAME: &str = "GamePadCC";
+const APP_NAME: &str = "DS4CC";
 const REG_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 
 /// Commands from the async runtime to the tray thread.
@@ -66,7 +66,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile) {
     menu.append(&exit_item).expect("menu append");
 
     let tray = match TrayIconBuilder::new()
-        .with_tooltip(format!("GamePadCC — {initial}"))
+        .with_tooltip(format!("DS4CC — {initial}"))
         .with_icon(icon)
         .with_menu(Box::new(menu))
         .build()
@@ -108,7 +108,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile) {
             Ok(TrayCmd::SetProfile(profile)) => {
                 let (r, g, b) = profile_color(profile);
                 let _ = tray.set_icon(Some(make_icon(r, g, b)));
-                let _ = tray.set_tooltip(Some(format!("GamePadCC — {profile}")));
+                let _ = tray.set_tooltip(Some(format!("DS4CC — {profile}")));
             }
             Err(mpsc::TryRecvError::Disconnected) => break,
             Err(mpsc::TryRecvError::Empty) => {}

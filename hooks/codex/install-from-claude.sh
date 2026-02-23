@@ -2,10 +2,10 @@
 set -euo pipefail
 
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-CLAUDE_HOOK_SCRIPT="$HOME/.claude/hooks/gamepadcc-state.sh"
+CLAUDE_HOOK_SCRIPT="$HOME/.claude/hooks/ds4cc-state.sh"
 CODEX_HOOK_DIR="$HOME/.codex/hooks"
 CODEX_HOOKS_JSON="$HOME/.codex/hooks.json"
-CODEX_HOOK_SCRIPT="$CODEX_HOOK_DIR/gamepadcc-state.sh"
+CODEX_HOOK_SCRIPT="$CODEX_HOOK_DIR/ds4cc-state.sh"
 
 mkdir -p "$CODEX_HOOK_DIR"
 
