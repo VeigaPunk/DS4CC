@@ -12,6 +12,7 @@
 /// The async runtime sends [`TrayCmd`] messages to update the icon.
 
 use crate::mapper::Profile;
+use std::path::PathBuf;
 use std::sync::mpsc;
 
 use tray_icon::{Icon, TrayIconBuilder};
@@ -120,26 +121,113 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile) {
 // ── Menu actions ──────────────────────────────────────────────────────
 
 fn open_wispr_flow() {
-    let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    // Try known Electron-style install paths
-    let candidates = [
-        format!("{local}\\Programs\\Wispr Flow\\Wispr Flow.exe"),
-        format!("{local}\\Programs\\wispr-flow\\Wispr Flow.exe"),
-        format!("{local}\\Programs\\WisprFlow\\WisprFlow.exe"),
-    ];
-    for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            if let Err(e) = std::process::Command::new(path).spawn() {
-                log::warn!("Failed to launch Wispr Flow at {path}: {e}");
+    match find_wispr_flow() {
+        Some(path) => {
+            log::info!("Launching Wispr Flow: {}", path.display());
+            if let Err(e) = std::process::Command::new(&path).spawn() {
+                log::error!("Failed to launch Wispr Flow: {e}");
             }
-            return;
+        }
+        None => {
+            log::warn!("Wispr Flow not found — prompting user");
+            prompt_download_wispr_flow();
         }
     }
-    // Fall back: let Windows resolve via App Paths registry
-    log::warn!("Wispr Flow not found at known paths, trying shell resolution");
-    let _ = std::process::Command::new("cmd")
-        .args(["/c", "start", "Wispr Flow.exe"])
-        .spawn();
+}
+
+/// Search for the Wispr Flow executable.
+///
+/// Resolution order:
+///   1. HKLM App Paths registry key (reliable if installer registered it)
+///   2. Common install locations under %LOCALAPPDATA%, %PROGRAMFILES%, %PROGRAMFILES(X86)%
+fn find_wispr_flow() -> Option<PathBuf> {
+    // 1. Registry App Paths
+    if let Some(path) = wispr_flow_from_app_paths() {
+        return Some(path);
+    }
+
+    // 2. Known filesystem locations
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(&local).join("WisprFlow").join("Wispr Flow.exe"));
+        candidates.push(PathBuf::from(&local).join("Programs").join("Wispr Flow").join("Wispr Flow.exe"));
+        candidates.push(PathBuf::from(&local).join("Programs").join("wispr-flow").join("Wispr Flow.exe"));
+        candidates.push(PathBuf::from(&local).join("Programs").join("WisprFlow").join("WisprFlow.exe"));
+    }
+    if let Ok(pf) = std::env::var("PROGRAMFILES") {
+        candidates.push(PathBuf::from(&pf).join("Wispr Flow").join("Wispr Flow.exe"));
+        candidates.push(PathBuf::from(&pf).join("WisprFlow").join("Wispr Flow.exe"));
+    }
+    if let Ok(pf86) = std::env::var("PROGRAMFILES(X86)") {
+        candidates.push(PathBuf::from(&pf86).join("Wispr Flow").join("Wispr Flow.exe"));
+    }
+
+    candidates.into_iter().find(|p| p.exists())
+}
+
+/// Query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Wispr Flow.exe
+fn wispr_flow_from_app_paths() -> Option<PathBuf> {
+    let output = std::process::Command::new("reg")
+        .args([
+            "query",
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Wispr Flow.exe",
+            "/ve",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    // Output format:  "    (Default)    REG_SZ    C:\path\to\Wispr Flow.exe"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if line.contains("REG_SZ") {
+            if let Some(value) = line.split("REG_SZ").nth(1) {
+                let path = PathBuf::from(value.trim());
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Show a Yes/No dialog when Wispr Flow can't be found.
+/// "Yes" opens the download page; "No" closes the dialog.
+fn prompt_download_wispr_flow() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, MB_ICONWARNING, MB_YESNO, IDYES,
+    };
+
+    let text: Vec<u16> = "Wispr Flow couldn't be located. Speech to Text won't work without it.\n\nWant to download?"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let caption: Vec<u16> = "Wispr Flow Not Found"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let result = unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            MB_YESNO | MB_ICONWARNING,
+        )
+    };
+
+    if result == IDYES {
+        // Open default browser to the Wispr Flow website
+        let _ = std::process::Command::new("explorer.exe")
+            .arg("https://wisprflow.ai")
+            .spawn();
+    }
 }
 
 fn restart_app() {
