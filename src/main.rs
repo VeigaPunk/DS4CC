@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
 
 #[tokio::main]
@@ -74,14 +74,18 @@ async fn main() {
 
     // State channel (persists across reconnections)
     let (state_tx, state_rx) = watch::channel(AgentState::Idle);
+    // Per-agent idle reminder channel (Arc<Mutex> so it survives reconnections)
+    let (idle_reminder_tx, idle_reminder_rx) = mpsc::channel::<()>(4);
+    let idle_reminder_rx = Arc::new(tokio::sync::Mutex::new(idle_reminder_rx));
 
     // Spawn state poller (scans ds4cc_agent_* files in state_dir)
     let state_dir = PathBuf::from(&cfg.state_dir);
     let poll_ms = cfg.poll_interval_ms;
     let idle_timeout_s = cfg.idle_timeout_s;
     let stale_timeout_s = cfg.stale_timeout_s;
+    let idle_reminder_s = cfg.idle_reminder_s;
     tokio::spawn(async move {
-        state::poll_state_file(state_dir, poll_ms, idle_timeout_s, stale_timeout_s, state_tx).await;
+        state::poll_state_file(state_dir, poll_ms, idle_timeout_s, stale_timeout_s, idle_reminder_s, state_tx, idle_reminder_tx).await;
     });
 
     // Main connection loop — reconnects on disconnect
@@ -132,8 +136,9 @@ async fn main() {
         let lightbar_cfg_clone = cfg.lightbar.clone();
         let mut state_rx_output = state_rx.clone();
         let player_leds_out = Arc::clone(&player_leds);
+        let idle_rx = Arc::clone(&idle_reminder_rx);
         let output_task = tokio::spawn(async move {
-            run_output_loop(output_handle, ct, conn, lightbar_cfg_clone, &mut state_rx_output, player_leds_out).await;
+            run_output_loop(output_handle, ct, conn, lightbar_cfg_clone, &mut state_rx_output, player_leds_out, idle_rx).await;
         });
 
         // Run input loop — returns when device disconnects
@@ -238,9 +243,6 @@ async fn run_input_loop(
     }
 }
 
-/// How long the agent must stay idle before the attention rumble fires.
-const IDLE_REMINDER_MS: u64 = 3 * 60 * 1000; // 3 minutes
-
 /// Minimum working duration before the Working → Done rumble fires.
 /// Short tasks don't warrant a notification; only surface it for real work.
 const WORKING_DONE_MIN_MS: u64 = 5 * 60 * 1000; // 5 minutes
@@ -252,6 +254,7 @@ const PLAYER1_LEDS: u8 = 0x04; // center only
 const PLAYER2_LEDS: u8 = 0x0A; // inner two (0x02 | 0x08)
 
 /// Output loop: update lightbar and rumble based on state changes.
+/// Receives per-agent idle reminder signals from the state poller.
 async fn run_output_loop(
     handle: hid::HidHandle,
     ct: controller::ControllerType,
@@ -259,12 +262,11 @@ async fn run_output_loop(
     lightbar_cfg: config::LightbarConfig,
     state_rx: &mut watch::Receiver<AgentState>,
     player_leds: Arc<AtomicU8>,
+    idle_reminder_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<()>>>,
 ) {
     let mut bt_seq = 0u8;
     let mut current_state = AgentState::Idle;
-    let state_entered_at = Instant::now();
-    let mut state_start = state_entered_at;
-    let mut idle_rumble_fired = false; // true once the 3-min reminder has fired for this idle stretch
+    let mut state_start = Instant::now();
 
     // Prime mic mute state from system before first frame
     tokio::task::spawn_blocking(mic::init).await.ok();
@@ -282,6 +284,7 @@ async fn run_output_loop(
     );
 
     let mut ticker = tokio::time::interval(Duration::from_millis(33)); // ~30fps for smooth pulse
+    let mut idle_rx = idle_reminder_rx.lock().await;
 
     loop {
         tokio::select! {
@@ -289,30 +292,25 @@ async fn run_output_loop(
                 let elapsed = state_start.elapsed().as_millis() as u64;
                 let leds = player_leds.load(Ordering::Relaxed);
                 send_output(&handle, ct, conn, &lightbar_cfg, current_state, elapsed, leds, &mut bt_seq);
-
-                // Idle attention reminder: fire once after 3 minutes in idle
-                if current_state == AgentState::Idle
-                    && !idle_rumble_fired
-                    && elapsed >= IDLE_REMINDER_MS
-                {
-                    idle_rumble_fired = true;
-                    log::info!("Idle reminder rumble triggered ({}min)", elapsed / 60_000);
-                    let rumble_handle = handle.clone_handle();
-                    let rumble_ct = ct;
-                    let rumble_conn = conn;
-                    tokio::spawn(async move {
-                        let mut seq = 0u8;
-                        rumble::play_pattern(&rumble::idle_reminder_pattern(), |left, right| {
-                            let out = OutputState {
-                                rumble_left: left,
-                                rumble_right: right,
-                                ..Default::default()
-                            };
-                            let report = output::build_report(rumble_ct, rumble_conn, &out, &mut seq);
-                            rumble_handle.write(&report);
-                        }).await;
-                    });
-                }
+            }
+            _ = idle_rx.recv() => {
+                // Per-agent idle reminder — fire rumble
+                log::info!("Per-agent idle reminder rumble triggered");
+                let rumble_handle = handle.clone_handle();
+                let rumble_ct = ct;
+                let rumble_conn = conn;
+                tokio::spawn(async move {
+                    let mut seq = 0u8;
+                    rumble::play_pattern(&rumble::idle_reminder_pattern(), |left, right| {
+                        let out = OutputState {
+                            rumble_left: left,
+                            rumble_right: right,
+                            ..Default::default()
+                        };
+                        let report = output::build_report(rumble_ct, rumble_conn, &out, &mut seq);
+                        rumble_handle.write(&report);
+                    }).await;
+                });
             }
             result = state_rx.changed() => {
                 if result.is_err() {
@@ -325,7 +323,6 @@ async fn run_output_loop(
                     let elapsed_in_old = state_start.elapsed().as_millis() as u64;
                     current_state = new_state;
                     state_start = Instant::now();
-                    idle_rumble_fired = false; // reset for new idle stretch
 
                     // Working → Done only rumbles if the task ran long enough to be meaningful.
                     // All other transitions fire unconditionally.

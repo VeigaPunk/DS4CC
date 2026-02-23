@@ -145,8 +145,8 @@ Both feed into the same aggregator:
 1. State files (`ds4cc_agent_<session_id>`) land in `%TEMP%`
 2. Daemon polls those files every 500ms
 3. Aggregates across all sessions — priority: **working > done > idle**
+4. **Per-agent idle tracking** — each agent's idle time is tracked individually. If any single agent sits idle for 8 minutes, the controller rumbles as an attention reminder — even if other agents are still working.
 
-No WebSockets. No RPC. Just file-based state detection.
 
 > **"Done" has a threshold.** Short tasks (< 10 min by default) go straight back to idle. Only real work triggers the green flash. No false celebrations.
 
@@ -261,6 +261,7 @@ Config file: `%APPDATA%\ds4cc\config.toml`
 poll_interval_ms = 500
 idle_timeout_s = 30
 stale_timeout_s = 600
+idle_reminder_s = 480     # per-agent idle rumble (8 min, 0 = disabled)
 
 [scroll]
 dead_zone = 20
