@@ -292,27 +292,41 @@ fn make_icon(r: u8, g: u8, b: u8) -> Icon {
     Icon::from_rgba(rgba, ICON_SIZE, ICON_SIZE).expect("valid icon data")
 }
 
-/// Generate 32×32 RGBA pixels of a DualShock-style controller silhouette.
+/// Generate 32×32 RGBA pixels of a DualSense-style controller silhouette.
+/// Uses signed-distance field rendering with sub-pixel anti-aliasing.
 fn generate_controller_rgba(r: u8, g: u8, b: u8) -> Vec<u8> {
     let mut rgba = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
-
     for y in 0..ICON_SIZE {
         for x in 0..ICON_SIZE {
-            if controller_shape(x as f32, y as f32) {
+            // Sample at pixel centre
+            let d = controller_sdf(x as f32 + 0.5, y as f32 + 0.5);
+            // Linear ramp: fully opaque at d=-0.5, fully transparent at d=+0.5
+            let alpha = (0.5 - d).clamp(0.0, 1.0);
+            if alpha > 0.0 {
                 let i = ((y * ICON_SIZE + x) * 4) as usize;
-                rgba[i] = r;
+                rgba[i]     = r;
                 rgba[i + 1] = g;
                 rgba[i + 2] = b;
-                rgba[i + 3] = 255;
+                rgba[i + 3] = (alpha * 255.0) as u8;
             }
         }
     }
-
     rgba
 }
 
-/// Signed-distance function for an axis-aligned rounded rectangle.
-/// Returns ≤ 0 inside the shape, > 0 outside.
+// ── SDF primitives ────────────────────────────────────────────────────
+
+/// Smooth minimum — blends two SDF surfaces with a continuous tangent.
+fn smin(a: f32, b: f32, k: f32) -> f32 {
+    let h = (0.5 + 0.5 * (b - a) / k).clamp(0.0, 1.0);
+    a * h + b * (1.0 - h) - k * h * (1.0 - h)
+}
+
+fn sdf_circle(px: f32, py: f32, cx: f32, cy: f32, r: f32) -> f32 {
+    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt() - r
+}
+
+/// Axis-aligned rounded rectangle SDF. Returns ≤ 0 inside.
 fn sdf_rounded_rect(px: f32, py: f32, cx: f32, cy: f32, hw: f32, hh: f32, r: f32) -> f32 {
     let r = r.min(hw).min(hh);
     let qx = (px - cx).abs() - hw + r;
@@ -320,32 +334,33 @@ fn sdf_rounded_rect(px: f32, py: f32, cx: f32, cy: f32, hw: f32, hh: f32, r: f32
     qx.max(0.0).hypot(qy.max(0.0)) + qx.min(0.0).max(qy.min(0.0)) - r
 }
 
-/// Returns true if pixel (x, y) is inside the controller silhouette.
+/// Signed-distance field for the DualSense controller silhouette.
+/// Negative = inside, positive = outside.
 ///
-/// Shape: wide elliptical body + two rounded-rectangle grip prongs.
-/// Corner radius 2.5 px on both grips gives a softer, more polished look.
-fn controller_shape(x: f32, y: f32) -> bool {
-    let cx = 15.5;
-    let cy = 12.5;
+/// Construction:
+///   Body  — wide rounded rect with large corner radius (squircle feel).
+///   Grips — each is a smooth union (smin) of two circles:
+///            upper circle anchors to the body; lower circle is offset
+///            slightly outward, producing the characteristic DualSense flare.
+fn controller_sdf(x: f32, y: f32) -> f32 {
+    // ── Body ──────────────────────────────────────────────────────────
+    // 24 × 15 px, corner radius 6 → very organic, pill-like
+    let body = sdf_rounded_rect(x, y, 15.5, 12.0, 12.0, 7.5, 6.0);
 
-    // Main body — wide ellipse
-    let ex = (x - cx) / 13.5;
-    let ey = (y - cy) / 9.0;
-    if ex * ex + ey * ey <= 1.0 {
-        return true;
-    }
+    // ── Left grip ─────────────────────────────────────────────────────
+    let lg_neck = sdf_circle(x, y,  8.5, 20.0, 4.0); // where grip meets body
+    let lg_tip  = sdf_circle(x, y,  7.0, 26.0, 4.0); // tip — offset left for flare
+    let l_grip  = smin(lg_neck, lg_tip, 3.5);
 
-    // Left grip — rounded rectangle, center (8, 23), 7.6 wide × 11 tall, r=2.5
-    if sdf_rounded_rect(x, y, 8.0, 23.0, 3.8, 5.5, 2.5) <= 0.0 {
-        return true;
-    }
+    // ── Right grip (perfect mirror) ───────────────────────────────────
+    let rg_neck = sdf_circle(x, y, 22.5, 20.0, 4.0);
+    let rg_tip  = sdf_circle(x, y, 24.0, 26.0, 4.0);
+    let r_grip  = smin(rg_neck, rg_tip, 3.5);
 
-    // Right grip — mirror image
-    if sdf_rounded_rect(x, y, 23.0, 23.0, 3.8, 5.5, 2.5) <= 0.0 {
-        return true;
-    }
-
-    false
+    // ── Final union ───────────────────────────────────────────────────
+    // Hard union of the two grips (they never overlap), then smooth-blend
+    // into the body so the transition is seamless.
+    smin(body, l_grip.min(r_grip), 3.0)
 }
 
 #[cfg(test)]
@@ -354,26 +369,26 @@ mod tests {
 
     #[test]
     fn icon_center_is_filled() {
-        assert!(controller_shape(15.0, 12.0));
-        assert!(controller_shape(16.0, 12.0));
+        assert!(controller_sdf(15.5, 12.0) < 0.0);
+        assert!(controller_sdf(16.0, 12.0) < 0.0);
     }
 
     #[test]
     fn icon_corners_are_empty() {
-        assert!(!controller_shape(0.0, 0.0));
-        assert!(!controller_shape(31.0, 0.0));
-        assert!(!controller_shape(0.0, 31.0));
-        assert!(!controller_shape(31.0, 31.0));
+        assert!(controller_sdf(0.5,  0.5)  > 0.0);
+        assert!(controller_sdf(31.5, 0.5)  > 0.0);
+        assert!(controller_sdf(0.5,  31.5) > 0.0);
+        assert!(controller_sdf(31.5, 31.5) > 0.0);
     }
 
     #[test]
     fn icon_grips_exist() {
-        // Left grip at row 22
-        assert!(controller_shape(8.0, 22.0));
-        // Right grip at row 22
-        assert!(controller_shape(23.0, 22.0));
-        // Gap between grips
-        assert!(!controller_shape(15.5, 25.0));
+        // Left grip tip
+        assert!(controller_sdf(7.5, 25.0) < 0.0);
+        // Right grip tip
+        assert!(controller_sdf(24.0, 25.0) < 0.0);
+        // Hollow gap between grips at the bottom
+        assert!(controller_sdf(15.5, 28.0) > 0.0);
     }
 
     #[test]
