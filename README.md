@@ -61,9 +61,9 @@ Here's the real flow, no buzzwords:
 
 1. You launch `ds4cc.exe`
 2. It loads your config (`%APPDATA%\ds4cc\config.toml`, or defaults)
-3. It optionally installs Codex hooks to WSL
-4. It starts a tray icon
-5. It starts watching agent state files in `%TEMP%`
+3. It starts a tray icon
+4. It starts watching agent state files in `%TEMP%`
+5. It starts polling Codex JSONL session logs via `\\wsl.localhost\` (if available)
 6. It connects to your controller via HID
 7. It enters two loops:
    - **Input** — read buttons → send keystrokes, toggle profiles (shortcut mapping)
@@ -131,21 +131,24 @@ This is the workflow DS4CC was built for: voice + gamepad + AI agents. No keyboa
 
 ### 🤖 Controller → AI Awareness
 
-DS4CC monitors Claude Code / Codex by watching state files. When the AI is:
+DS4CC monitors Claude Code and Codex by watching state files. When the AI is:
 
 - **Working** → lightbar pulses blue
 - **Done** → lightbar flashes green, rumble kicks
 - **Error** → silently recovers (no visual noise)
 - **Idle** → default color
 
-It does this by:
+**Claude Code** — shell hooks in `~/.claude/hooks/` write per-session state files to `%TEMP%` on lifecycle events.
 
-1. Installing hooks into `~/.claude/hooks/` (Claude Code) or `~/.codex/hooks/` (Codex)
-2. Hooks write per-session state files (`ds4cc_agent_<session_id>`) to `%TEMP%`
-3. Daemon polls those files every 500ms
-4. Aggregates across all sessions — priority: **working > done > idle**
+**Codex** — the daemon polls Codex JSONL session logs directly via `\\wsl.localhost\` UNC paths. No hooks, no bridge scripts, no external processes. It tail-follows the JSONL files, parses events (`user_message`, `task_complete`, etc.), and writes the same state files.
 
-No WebSockets. No RPC. Just file-based state detection. Simple. Predictable. Stable.
+Both feed into the same aggregator:
+
+1. State files (`ds4cc_agent_<session_id>`) land in `%TEMP%`
+2. Daemon polls those files every 500ms
+3. Aggregates across all sessions — priority: **working > done > idle**
+
+No WebSockets. No RPC. Just file-based state detection.
 
 > **"Done" has a threshold.** Short tasks (< 10 min by default) go straight back to idle. Only real work triggers the green flash. No false celebrations.
 
@@ -247,15 +250,7 @@ Restart Claude Code after installing hooks.
 
 ### Codex
 
-**Nothing to do.** DS4CC auto-deploys hook scripts to `~/.codex/hooks/` on startup via WSL. If WSL or Codex aren't installed, it skips silently.
-
-Manual bridge management:
-
-```bash
-~/.codex/hooks/start.sh     # Start
-~/.codex/hooks/stop.sh      # Stop
-~/.codex/hooks/status.sh    # Check status
-```
+**Nothing to do.** DS4CC natively polls Codex JSONL session logs via `\\wsl.localhost\` UNC paths. No hooks, no bridge scripts, no external processes to manage. If WSL or Codex aren't installed, it skips silently.
 
 To disable:
 
@@ -289,6 +284,7 @@ prefix = "Ctrl+B"
 
 [codex]
 enabled = true
+done_threshold_s = 600    # seconds before "done" fires (vs. straight to idle)
 
 # Lightbar colors (RGB) — customize per state
 [lightbar.idle]
@@ -307,13 +303,15 @@ g = 255
 b = 0
 ```
 
-Environment variables for the hook script:
+Environment variables for the Claude Code hook script:
 
 | Variable | Default | Description |
 |---|---|---|
 | `DS4CC_DONE_THRESHOLD_S` | `600` | Minimum task duration (seconds) before "done" fires |
 | `DS4CC_STALE_WORKING_S` | `900` | Seconds before a stuck "working" state is pruned |
 | `DS4CC_STATE_DIR` | `%TEMP%` | Directory for agent state files |
+
+For Codex, the done threshold is configured in `config.toml` under `[codex] done_threshold_s`.
 
 ---
 
@@ -357,7 +355,7 @@ state.rs           Multi-agent state file polling and aggregation
 mic.rs             System microphone toggle via Core Audio COM
 tray.rs            System tray icon with profile indicator
 tmux_detect.rs     Auto-detect tmux prefix + key bindings via WSL
-codex_setup.rs     Auto-deploy Codex hook scripts to WSL
+codex_poll.rs      Native Codex JSONL session poller via UNC paths
 wsl.rs             Shared WSL command execution utility
 ```
 
