@@ -53,8 +53,11 @@ mkdir -p ~/.claude/hooks && cp hooks/ds4cc-state.sh ~/.claude/hooks/ && chmod +x
 bash install-hooks.sh
 ```
 
-Plug in your DualSense. Launch DS4CC. Open Claude Code.
-The lightbar turns blue when the agent works, green when it's done.
+Plug in your DualSense. Launch DS4CC. Open Claude Code or Codex.
+
+The lightbar reflects the real-time status of your AI agents — across all sessions, on both Windows and WSL CLIs. Rumble kicks in when a long-running task completes or an agent has been idle for a while, so you never miss the moment.
+
+Colors, thresholds, and behavior are all customizable via `%APPDATA%\ds4cc\config.toml`.
 
 ---
 
