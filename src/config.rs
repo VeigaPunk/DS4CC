@@ -12,6 +12,7 @@ pub struct Config {
     pub scroll: ScrollConfig,
     pub tmux: TmuxConfig,
     pub codex: CodexConfig,
+    pub opencode: OpenCodeConfig,
     /// Directory where agent state files are written (ds4cc_agent_*)
     pub state_dir: String,
     pub poll_interval_ms: u64,
@@ -137,6 +138,33 @@ impl Default for CodexConfig {
     }
 }
 
+/// OpenCode plugin configuration.
+///
+/// OpenCode uses a JS plugin system. The DS4CC plugin (`hooks/opencode/ds4cc-opencode.js`)
+/// writes the same `ds4cc_agent_*` state files as the Claude Code and Codex integrations.
+/// No Rust poller is needed — the plugin pushes state directly via OpenCode's event system.
+///
+/// Install with `install-hooks.sh`, which copies the plugin to
+/// `~/.config/opencode/plugins/ds4cc-opencode.js`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct OpenCodeConfig {
+    /// Whether the OpenCode plugin was installed (informational; not enforced by daemon).
+    pub enabled: bool,
+    /// Seconds the task must run before "done" fires. Passed to the plugin via the
+    /// DS4CC_DONE_THRESHOLD_S environment variable (set in your shell profile).
+    pub done_threshold_s: u64,
+}
+
+impl Default for OpenCodeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            done_threshold_s: 600, // 10 minutes
+        }
+    }
+}
+
 /// Button mapping configuration.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
@@ -161,6 +189,7 @@ impl Default for Config {
             scroll: ScrollConfig::default(),
             tmux: TmuxConfig::default(),
             codex: CodexConfig::default(),
+            opencode: OpenCodeConfig::default(),
             state_dir: default_state_dir(),
             poll_interval_ms: 500, // 2Hz
             idle_timeout_s: 30,

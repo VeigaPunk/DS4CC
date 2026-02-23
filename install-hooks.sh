@@ -108,5 +108,27 @@ else
     echo "(Codex not detected — skipping Codex hook bridge setup)"
 fi
 
+# ── OpenCode hook plugin (optional) ──────────────────────────────────
+
+OPENCODE_PLUGIN_DIR="$HOME/.config/opencode/plugins"
+OPENCODE_SRC="$SCRIPT_DIR/hooks/opencode/ds4cc-opencode.js"
+if command -v opencode &>/dev/null || [ -d "$HOME/.config/opencode" ]; then
+    echo ""
+    echo "OpenCode detected — installing plugin..."
+    if [ -f "$OPENCODE_SRC" ]; then
+        mkdir -p "$OPENCODE_PLUGIN_DIR"
+        cp "$OPENCODE_SRC" "$OPENCODE_PLUGIN_DIR/ds4cc-opencode.js"
+        sed -i 's/\r$//' "$OPENCODE_PLUGIN_DIR/ds4cc-opencode.js" 2>/dev/null || true
+        echo "Installed OpenCode plugin to $OPENCODE_PLUGIN_DIR/ds4cc-opencode.js"
+        echo "Restart OpenCode for the plugin to take effect."
+    else
+        echo "Warning: hooks/opencode/ds4cc-opencode.js not found in repo. Skipping OpenCode setup."
+    fi
+else
+    echo ""
+    echo "(OpenCode not detected — skipping OpenCode plugin installation)"
+    echo "  To install manually later: cp hooks/opencode/ds4cc-opencode.js ~/.config/opencode/plugins/"
+fi
+
 echo ""
 echo "Done. Restart Claude Code for hooks to take effect."
