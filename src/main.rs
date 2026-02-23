@@ -18,6 +18,8 @@ use crate::output::OutputState;
 use crate::state::AgentState;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Instant;
 use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
@@ -108,16 +110,20 @@ async fn main() {
         let ct = info.controller_type;
         let conn = info.connection_type;
 
+        // Shared player indicator LED state (AtomicU8 so both loops can read/write it).
+        let player_leds = Arc::new(AtomicU8::new(0u8));
+
         // Spawn output loop for this connection
         let output_handle = handle.clone_handle();
         let lightbar_cfg_clone = cfg.lightbar.clone();
         let mut state_rx_output = state_rx.clone();
+        let player_leds_out = Arc::clone(&player_leds);
         let output_task = tokio::spawn(async move {
-            run_output_loop(output_handle, ct, conn, lightbar_cfg_clone, &mut state_rx_output).await;
+            run_output_loop(output_handle, ct, conn, lightbar_cfg_clone, &mut state_rx_output, player_leds_out).await;
         });
 
         // Run input loop — returns when device disconnects
-        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.tmux, tmux_detected.as_ref(), &tray_tx).await;
+        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.tmux, tmux_detected.as_ref(), &tray_tx, Arc::clone(&player_leds)).await;
 
         // Device disconnected — cancel output task and reconnect
         output_task.abort();
@@ -136,6 +142,7 @@ async fn run_input_loop(
     tmux_cfg: &config::TmuxConfig,
     tmux_detected: Option<&tmux_detect::TmuxDetected>,
     tray_tx: &std::sync::mpsc::Sender<tray::TrayCmd>,
+    player_leds: Arc<AtomicU8>,
 ) {
     let mut mapper_state = mapper::MapperState::new(scroll_cfg, tmux_cfg, tmux_detected);
     let mut buf = [0u8; 128];
@@ -183,11 +190,25 @@ async fn run_input_loop(
                             log::debug!("Action: {action:?}");
                         }
 
-                        // Update tray icon on profile change
+                        // Update tray icon and blink player LED on profile change
                         let current_profile = mapper_state.profile();
                         if current_profile != last_profile {
                             let _ = tray_tx.send(tray::TrayCmd::SetProfile(current_profile));
                             last_profile = current_profile;
+
+                            // Blink center player indicator LED: two quick white flashes
+                            let leds = Arc::clone(&player_leds);
+                            tokio::spawn(async move {
+                                const CENTER_ON: u8  = 0x04 | 0x20; // center dot, instant mode
+                                const LED_OFF: u8    = 0x00;
+                                leds.store(CENTER_ON, Ordering::Relaxed);
+                                sleep(Duration::from_millis(150)).await;
+                                leds.store(LED_OFF, Ordering::Relaxed);
+                                sleep(Duration::from_millis(100)).await;
+                                leds.store(CENTER_ON, Ordering::Relaxed);
+                                sleep(Duration::from_millis(150)).await;
+                                leds.store(LED_OFF, Ordering::Relaxed);
+                            });
                         }
                     }
                     Err(e) => {
@@ -216,6 +237,7 @@ async fn run_output_loop(
     conn: controller::ConnectionType,
     lightbar_cfg: config::LightbarConfig,
     state_rx: &mut watch::Receiver<AgentState>,
+    player_leds: Arc<AtomicU8>,
 ) {
     let mut bt_seq = 0u8;
     let mut current_state = AgentState::Idle;
@@ -231,6 +253,7 @@ async fn run_output_loop(
         &lightbar_cfg,
         current_state,
         0,
+        0, // player_leds: off on startup
         &mut bt_seq,
     );
 
@@ -240,7 +263,8 @@ async fn run_output_loop(
         tokio::select! {
             _ = ticker.tick() => {
                 let elapsed = state_start.elapsed().as_millis() as u64;
-                send_output(&handle, ct, conn, &lightbar_cfg, current_state, elapsed, &mut bt_seq);
+                let leds = player_leds.load(Ordering::Relaxed);
+                send_output(&handle, ct, conn, &lightbar_cfg, current_state, elapsed, leds, &mut bt_seq);
 
                 // Idle attention reminder: fire once after 3 minutes in idle
                 if current_state == AgentState::Idle
@@ -331,6 +355,7 @@ fn send_output(
     lightbar_cfg: &config::LightbarConfig,
     state: AgentState,
     elapsed_ms: u64,
+    player_leds: u8,
     bt_seq: &mut u8,
 ) {
     let (r, g, b) = lightbar::compute_color(lightbar_cfg, state, elapsed_ms);
@@ -340,6 +365,7 @@ fn send_output(
         lightbar_b: b,
         rumble_left: 0,
         rumble_right: 0,
+        player_leds,
     };
     let report = output::build_report(ct, conn, &out, bt_seq);
     handle.write(&report);

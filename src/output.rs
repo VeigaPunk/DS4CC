@@ -53,6 +53,10 @@ pub struct OutputState {
     pub lightbar_b: u8,
     pub rumble_left: u8,
     pub rumble_right: u8,
+    /// Player indicator LED bitmask (DualSense only).
+    /// Bits 0-4 = 5 dots left→right. Bit 5 = instant mode (no fade).
+    /// e.g. 0x04 = center dot, 0x24 = center dot + instant.
+    pub player_leds: u8,
 }
 
 /// Build an output report. Returns the report as a Vec<u8> ready to write via HID.
@@ -90,6 +94,7 @@ fn build_dualsense_usb(state: &OutputState) -> Vec<u8> {
     buf[39] = 0x02; // valid_flag2: bit 1 = lightbar setup control enable
     buf[42] = 0x02; // lightbar_setup: fade out default blue LED
     buf[43] = 0x00; // led_brightness: 0x00=High
+    buf[44] = state.player_leds;
     buf[45] = state.lightbar_r;
     buf[46] = state.lightbar_g;
     buf[47] = state.lightbar_b;
@@ -109,6 +114,7 @@ fn build_dualsense_bt(state: &OutputState, _seq: &mut u8) -> Vec<u8> {
     buf[40] = 0x02; // valid_flag2: bit 1 = lightbar setup control enable
     buf[43] = 0x02; // lightbar_setup: fade out default blue LED
     buf[44] = 0x00; // led_brightness: 0x00=High
+    buf[45] = state.player_leds;
     buf[46] = state.lightbar_r;
     buf[47] = state.lightbar_g;
     buf[48] = state.lightbar_b;
@@ -160,6 +166,7 @@ mod tests {
             lightbar_b: 0,
             rumble_left: 0,
             rumble_right: 0,
+            player_leds: 0,
         };
         let mut seq = 0u8;
         let report = build_report(ControllerType::DualSense, ConnectionType::Usb, &state, &mut seq);
@@ -168,6 +175,17 @@ mod tests {
         assert_eq!(report[45], 255); // red
         assert_eq!(report[46], 128); // green
         assert_eq!(report[47], 0);   // blue
+    }
+
+    #[test]
+    fn dualsense_player_leds_byte_position() {
+        // Center dot + instant mode (0x24) must land at buf[44] (USB) and buf[45] (BT).
+        let state = OutputState { player_leds: 0x24, ..Default::default() };
+        let mut seq = 0u8;
+        let usb = build_report(ControllerType::DualSense, ConnectionType::Usb, &state, &mut seq);
+        assert_eq!(usb[44], 0x24);
+        let bt = build_report(ControllerType::DualSense, ConnectionType::Bluetooth, &state, &mut seq);
+        assert_eq!(bt[45], 0x24);
     }
 
     #[test]
@@ -189,6 +207,7 @@ mod tests {
             lightbar_b: 0,
             rumble_left: 128,
             rumble_right: 64,
+            player_leds: 0,
         };
         let mut seq = 0u8;
         let report = build_report(ControllerType::Ds4V2, ConnectionType::Usb, &state, &mut seq);
