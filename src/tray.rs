@@ -1,5 +1,5 @@
-/// System tray icon: DualShock controller silhouette.
-/// Black = Default profile, Green = Tmux profile.
+/// System tray icon: DualSense controller silhouette.
+/// White = Default profile, Green = Tmux profile.
 ///
 /// Right-click context menu:
 ///   Open Wispr Flow
@@ -282,8 +282,8 @@ fn set_auto_start(enabled: bool) {
 
 fn profile_color(profile: Profile) -> (u8, u8, u8) {
     match profile {
-        Profile::Default => (40, 40, 40),
-        Profile::Tmux => (0, 190, 0),
+        Profile::Default => (255, 255, 255), // white
+        Profile::Tmux    => (0, 210, 80),    // green
     }
 }
 
@@ -311,12 +311,22 @@ fn generate_controller_rgba(r: u8, g: u8, b: u8) -> Vec<u8> {
     rgba
 }
 
+/// Signed-distance function for an axis-aligned rounded rectangle.
+/// Returns ≤ 0 inside the shape, > 0 outside.
+fn sdf_rounded_rect(px: f32, py: f32, cx: f32, cy: f32, hw: f32, hh: f32, r: f32) -> f32 {
+    let r = r.min(hw).min(hh);
+    let qx = (px - cx).abs() - hw + r;
+    let qy = (py - cy).abs() - hh + r;
+    qx.max(0.0).hypot(qy.max(0.0)) + qx.min(0.0).max(qy.min(0.0)) - r
+}
+
 /// Returns true if pixel (x, y) is inside the controller silhouette.
 ///
-/// Shape: wide elliptical body (upper portion) + two tapered grip prongs (lower).
+/// Shape: wide elliptical body + two rounded-rectangle grip prongs.
+/// Corner radius 2.5 px on both grips gives a softer, more polished look.
 fn controller_shape(x: f32, y: f32) -> bool {
     let cx = 15.5;
-    let cy = 12.0;
+    let cy = 12.5;
 
     // Main body — wide ellipse
     let ex = (x - cx) / 13.5;
@@ -325,23 +335,14 @@ fn controller_shape(x: f32, y: f32) -> bool {
         return true;
     }
 
-    // Grips — extend below the body
-    if y >= 17.0 && y <= 28.0 {
-        let t = (y - 17.0) / 11.0; // 0 at top → 1 at bottom
+    // Left grip — rounded rectangle, center (8, 23), 7.6 wide × 11 tall, r=2.5
+    if sdf_rounded_rect(x, y, 8.0, 23.0, 3.8, 5.5, 2.5) <= 0.0 {
+        return true;
+    }
 
-        let hw = 4.5 - t * 1.5; // half-width narrows downward
-
-        // Left grip
-        let lc = 7.5 + t * 1.5; // center drifts slightly inward
-        if (x - lc).abs() <= hw {
-            return true;
-        }
-
-        // Right grip (mirror)
-        let rc = 23.5 - t * 1.5;
-        if (x - rc).abs() <= hw {
-            return true;
-        }
+    // Right grip — mirror image
+    if sdf_rounded_rect(x, y, 23.0, 23.0, 3.8, 5.5, 2.5) <= 0.0 {
+        return true;
     }
 
     false
