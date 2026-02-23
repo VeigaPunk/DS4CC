@@ -154,7 +154,7 @@ Your controller becomes a status light.
 
 - **Lightbar** — color reflects agent state. Pulsing blue = thinking. Green = done. Configurable RGB.
 - **Rumble** — haptic patterns on state transitions. You feel when the AI finishes.
-- **Player LEDs** — 5-dot bar mirrors PS5-native presets. Player 1 = Default, Player 2 = Tmux.
+- **Profile LEDs** — Profile 1 = 1 White LED on controller, Profile 2 = 2 White LEDs.
 - **Mic mute** — mute button toggles system microphone via Core Audio. LED lit = muted. Works on any profile.
 
 The output loop runs every ~33ms to keep LEDs smooth. Rumble is async but shares the HID device safely.
@@ -173,9 +173,7 @@ This prevents zombie states.
 
 ### 🖥️ Tray Icon
 
-System tray icon shows current profile. Right-click to switch profile or quit. Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
-
-Profile switching is done via controller (PS button). The tray is for when you don't have the controller in hand.
+System tray icon shows current profile. Right-click to start Wispr, enable auto-start-up, restart or exit app. Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
 
 ---
 
