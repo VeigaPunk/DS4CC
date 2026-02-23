@@ -111,7 +111,8 @@ async fn main() {
         let conn = info.connection_type;
 
         // Shared player indicator LED state (AtomicU8 so both loops can read/write it).
-        let player_leds = Arc::new(AtomicU8::new(0u8));
+        // Start at Player 1 (Default profile) on every connection.
+        let player_leds = Arc::new(AtomicU8::new(PLAYER1_LEDS));
 
         // Spawn output loop for this connection
         let output_handle = handle.clone_handle();
@@ -196,18 +197,22 @@ async fn run_input_loop(
                             let _ = tray_tx.send(tray::TrayCmd::SetProfile(current_profile));
                             last_profile = current_profile;
 
-                            // Blink center player indicator LED: two quick white flashes
+                            // Blink center dot twice, then settle on the new profile's LED pattern.
+                            let target_leds = match current_profile {
+                                mapper::Profile::Default => PLAYER1_LEDS,
+                                mapper::Profile::Tmux    => PLAYER2_LEDS,
+                            };
                             let leds = Arc::clone(&player_leds);
                             tokio::spawn(async move {
-                                const CENTER_ON: u8  = 0x04 | 0x20; // center dot, instant mode
-                                const LED_OFF: u8    = 0x00;
-                                leds.store(CENTER_ON, Ordering::Relaxed);
+                                const BLINK_ON: u8 = 0x04 | 0x20; // center dot, instant mode
+                                leds.store(BLINK_ON, Ordering::Relaxed);
                                 sleep(Duration::from_millis(150)).await;
-                                leds.store(LED_OFF, Ordering::Relaxed);
+                                leds.store(0x00, Ordering::Relaxed);
                                 sleep(Duration::from_millis(100)).await;
-                                leds.store(CENTER_ON, Ordering::Relaxed);
+                                leds.store(BLINK_ON, Ordering::Relaxed);
                                 sleep(Duration::from_millis(150)).await;
-                                leds.store(LED_OFF, Ordering::Relaxed);
+                                // Settle on the profile's persistent player indicator
+                                leds.store(target_leds, Ordering::Relaxed);
                             });
                         }
                     }
@@ -230,6 +235,12 @@ const IDLE_REMINDER_MS: u64 = 3 * 60 * 1000; // 3 minutes
 /// Short tasks don't warrant a notification; only surface it for real work.
 const WORKING_DONE_MIN_MS: u64 = 5 * 60 * 1000; // 5 minutes
 
+/// Player indicator LED presets — mimics PS5 native player assignment.
+///   Player 1 (Default profile) → center dot only
+///   Player 2 (Tmux profile)    → inner two dots (center-left + center-right)
+const PLAYER1_LEDS: u8 = 0x04; // center only
+const PLAYER2_LEDS: u8 = 0x0A; // inner two (0x02 | 0x08)
+
 /// Output loop: update lightbar and rumble based on state changes.
 async fn run_output_loop(
     handle: hid::HidHandle,
@@ -245,7 +256,7 @@ async fn run_output_loop(
     let mut state_start = state_entered_at;
     let mut idle_rumble_fired = false; // true once the 3-min reminder has fired for this idle stretch
 
-    // Set initial lightbar
+    // Set initial lightbar + Player 1 indicator (Default profile on startup)
     send_output(
         &handle,
         ct,
@@ -253,7 +264,7 @@ async fn run_output_loop(
         &lightbar_cfg,
         current_state,
         0,
-        0, // player_leds: off on startup
+        PLAYER1_LEDS,
         &mut bt_seq,
     );
 
