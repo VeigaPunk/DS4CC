@@ -186,7 +186,7 @@ PS button switches profile (shortcut mappings). System tray icon shows current p
 | DualShock 4 v1 | ✓ | ✓ |
 | DualShock 4 v2 | ✓ | ✓ |
 
-Bluetooth supports all features except Mic mute (WIP).
+Bluetooth supports all features except Microphone Input (WIP).
 
 ## Requirements
 
