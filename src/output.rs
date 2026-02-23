@@ -58,6 +58,8 @@ pub struct OutputState {
     /// Bits 0-4 = 5 dots left→right. Bit 5 = instant mode (no fade).
     /// e.g. 0x04 = center dot, 0x24 = center dot + instant.
     pub player_leds: u8,
+    /// Mute button LED (DualSense only). 0x00=off, 0x01=on, 0x02=pulse.
+    pub mute_led: u8,
 }
 
 /// Build an output report. Returns the report as a Vec<u8> ready to write via HID.
@@ -89,9 +91,10 @@ fn build_dualsense_usb(state: &OutputState) -> Vec<u8> {
     let mut buf = vec![0u8; 48];
     buf[0] = 0x02;  // report ID
     buf[1] = 0x0F;  // valid_flag0: rumble + triggers (bits 0-3)
-    buf[2] = 0x14;  // valid_flag1: lightbar (bit2=0x04) + player LEDs (bit4=0x10)
+    buf[2] = 0x15;  // valid_flag1: mic LED (bit0) + lightbar (bit2) + player LEDs (bit4)
     buf[3] = state.rumble_right;
     buf[4] = state.rumble_left;
+    buf[9] = state.mute_led;    // mute button LED: 0x00=off, 0x01=on, 0x02=pulse
     buf[39] = 0x02; // valid_flag2: bit 1 = lightbar setup control enable
     buf[42] = 0x02; // lightbar_setup: fade out default blue LED
     buf[43] = 0x00; // led_brightness: 0x00=High
@@ -109,9 +112,10 @@ fn build_dualsense_bt(state: &OutputState, _seq: &mut u8) -> Vec<u8> {
     buf[0] = 0x31;  // report ID
     buf[1] = 0x02;  // DS4W: fixed data tag (no sequence numbering)
     buf[2] = 0x0F;  // valid_flag0: rumble + triggers
-    buf[3] = 0x14;  // valid_flag1: lightbar (bit2=0x04) + player LEDs (bit4=0x10)
+    buf[3] = 0x15;  // valid_flag1: mic LED (bit0) + lightbar (bit2) + player LEDs (bit4)
     buf[4] = state.rumble_right;
     buf[5] = state.rumble_left;
+    buf[10] = state.mute_led;   // mute button LED (BT offset +1 vs USB)
     buf[40] = 0x02; // valid_flag2: bit 1 = lightbar setup control enable
     buf[43] = 0x02; // lightbar_setup: fade out default blue LED
     buf[44] = 0x00; // led_brightness: 0x00=High
@@ -168,6 +172,7 @@ mod tests {
             rumble_left: 0,
             rumble_right: 0,
             player_leds: 0,
+            mute_led: 0,
         };
         let mut seq = 0u8;
         let report = build_report(ControllerType::DualSense, ConnectionType::Usb, &state, &mut seq);
@@ -209,6 +214,7 @@ mod tests {
             rumble_left: 128,
             rumble_right: 64,
             player_leds: 0,
+            mute_led: 0,
         };
         let mut seq = 0u8;
         let report = build_report(ControllerType::Ds4V2, ConnectionType::Usb, &state, &mut seq);

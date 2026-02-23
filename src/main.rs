@@ -254,6 +254,9 @@ async fn run_output_loop(
     let mut state_start = state_entered_at;
     let mut idle_rumble_fired = false; // true once the 3-min reminder has fired for this idle stretch
 
+    // Prime mic mute state from system before first frame
+    tokio::task::spawn_blocking(mic::init).await.ok();
+
     // Set initial lightbar + Player 1 indicator (Default profile on startup)
     send_output(
         &handle,
@@ -375,6 +378,7 @@ fn send_output(
         rumble_left: 0,
         rumble_right: 0,
         player_leds,
+        mute_led: mic::MIC_MUTED.load(std::sync::atomic::Ordering::Relaxed) as u8,
     };
     let report = output::build_report(ct, conn, &out, bt_seq);
     handle.write(&report);
