@@ -144,7 +144,7 @@ State files (`ds4cc_agent_<session_id>`) land in `%TEMP%`. The daemon polls them
 
 Each agent is tracked individually:
 
-- **Done rumble** — when any agent finishes a task that took >= 7 minutes, the controller rumbles. Short tasks go straight back to idle without notification.
+- **Done rumble** — when any agent finishes a task that took >= 10 minutes, the controller rumbles. Short tasks go straight back to idle without notification.
 - **Idle reminder** — when any agent sits idle for 8 minutes, an attention rumble fires — even if other agents are still working.
 - **"Done" threshold** — short tasks (< 10 min by default) write "idle" instead of "done" at the hook level. Only real work triggers the green flash.
 

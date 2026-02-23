@@ -248,7 +248,7 @@ async fn run_input_loop(
 
 /// Minimum working duration before the Working → Done rumble fires.
 /// Short tasks don't warrant a notification; only surface it for real work.
-const WORKING_DONE_MIN_MS: u64 = 7 * 60 * 1000; // 7 minutes
+const WORKING_DONE_MIN_MS: u64 = 10 * 60 * 1000; // 10 minutes
 
 /// Player indicator LED presets — mimics PS5 native player assignment.
 ///   Player 1 (Default profile) → center dot only
