@@ -66,7 +66,7 @@ Here's the real flow, no buzzwords:
 5. It starts watching agent state files in `%TEMP%`
 6. It connects to your controller via HID
 7. It enters two loops:
-   - **Input** — read buttons → send keystrokes, toggle profiles
+   - **Input** — read buttons → send keystrokes, toggle profiles (shortcut mapping)
    - **Output** — conditional agent states → lightbar color | rumble
 
 Everything lives inside one Rust process.
