@@ -99,7 +99,7 @@ Two profiles: **Default** and **Tmux**, toggled with the PS button. Both are ful
 | Circle (○) | Escape |
 | Triangle (△) | Tab |
 | D-pad | Arrow keys |
-| Right stick | Scroll (vertical + horizontal) |
+| Right stick | Scroll (vertical — replaces mouse scroll wheel) |
 | L2 | Wispr speech-to-text (hold to dictate) |
 | PS | Toggle profile (Default ↔ Tmux) |
 | Mute | Toggle system microphone |
