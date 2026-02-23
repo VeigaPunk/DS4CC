@@ -161,6 +161,8 @@ pub async fn poll_state_file(
     let mut agent_tracker: HashMap<String, (AgentState, Instant)> = HashMap::new();
     // Agents whose idle reminder has already fired for the current idle stretch
     let mut reminder_fired: HashSet<String> = HashSet::new();
+    // Cooldown: after firing an idle reminder, skip per-agent checks for 5s
+    let mut reminder_cooldown: Option<Instant> = None;
 
     loop {
         ticker.tick().await;
@@ -189,6 +191,32 @@ pub async fn poll_state_file(
         // Per-agent tracking (idle reminders + Working→Done rumble)
         let now = Instant::now();
 
+        // Cooldown: skip per-agent checks for 5s after firing a reminder
+        if let Some(cd) = reminder_cooldown {
+            if now.duration_since(cd) < Duration::from_secs(5) {
+                // Still in cooldown — only update tracker for new/changed agents
+                for (id, state) in &current_agents {
+                    match agent_tracker.get(id) {
+                        Some((prev_state, _)) if *prev_state != *state => {
+                            agent_tracker.insert(id.clone(), (*state, now));
+                            reminder_fired.remove(id);
+                        }
+                        None => {
+                            agent_tracker.insert(id.clone(), (*state, now));
+                        }
+                        _ => {}
+                    }
+                }
+                agent_tracker.retain(|id, _| current_agents.contains_key(id));
+                reminder_fired.retain(|id| current_agents.contains_key(id));
+                continue;
+            } else {
+                reminder_cooldown = None;
+            }
+        }
+
+        let mut idle_reminder_this_tick = false;
+
         for (id, state) in &current_agents {
             match agent_tracker.get(id) {
                 Some((prev_state, since)) if *prev_state == *state => {
@@ -203,7 +231,7 @@ pub async fn poll_state_file(
                             now.duration_since(*since).as_secs()
                         );
                         reminder_fired.insert(id.clone());
-                        let _ = idle_reminder_tx.try_send(());
+                        idle_reminder_this_tick = true;
                     }
                 }
                 Some((prev_state, since)) => {
@@ -232,6 +260,12 @@ pub async fn poll_state_file(
                     agent_tracker.insert(id.clone(), (*state, now));
                 }
             }
+        }
+
+        // Fire at most one idle reminder per poll tick
+        if idle_reminder_this_tick {
+            let _ = idle_reminder_tx.try_send(());
+            reminder_cooldown = Some(now);
         }
 
         // Remove agents that no longer have state files
