@@ -5,14 +5,37 @@
 <h1 align="center">DS4CC</h1>
 
 <p align="center">
-  DualSense / DS4 controller as a feedback device for Claude Code and Codex on Windows.
-  <br>
-  Lightbar, haptics, player LEDs, mic mute — all driven by your AI agent's state.
+  Turn a PlayStation controller into a programmable dev companion with AI awareness.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Rust-2024_edition-f74c00?logo=rust&logoColor=white" alt="Rust">
 </p>
+
+---
+
+## Mission
+
+Turn a controller into a programmable command interface for developers.
+
+Make invisible processes tactile. Make AI state observable. Reduce keyboard friction. Keep the system simple.
+
+---
+
+## What This Is
+
+DS4CC is a small Rust program that runs in the background and lets your PlayStation controller:
+
+- **Control tmux** — switch panes, split windows, navigate sessions
+- **React to Claude Code / Codex activity** — lightbar changes when the AI is thinking
+- **Give you rumble + lightbar feedback** when things happen
+- **Act like a programmable dev companion** — buttons map to real keystrokes
+
+It's not a giant framework. It's one daemon. One binary. One job:
+
+**Read controller input. Watch AI state. Send feedback back to the controller.**
+
+That's it.
 
 ---
 
@@ -34,18 +57,122 @@ The lightbar turns blue when the agent works, green when it's done.
 
 ---
 
-## Features
+## How It Actually Works
 
-| Feature | What it does |
+Here's the real flow, no buzzwords:
+
+1. You launch `ds4cc.exe`
+2. It loads your config (`%APPDATA%\ds4cc\config.toml`, or defaults)
+3. It optionally installs Codex hooks to WSL
+4. It starts a tray icon
+5. It starts watching agent state files in `%TEMP%`
+6. It connects to your controller via HID
+7. It enters two loops:
+   - **Input loop** — read buttons → send keystrokes, toggle profiles, mute mic
+   - **Output loop** (~30fps) — update lightbar color, player LEDs, rumble, mic LED
+
+Everything lives inside one Rust process.
+
+There is no microservice architecture. There is no event-bus abstraction layer. There is no cloud.
+
+Just loops, channels, and a controller.
+
+---
+
+## Core Features
+
+### 🎮 Controller → Keystrokes
+
+Press buttons → things happen. D-pad sends arrow keys with auto-repeat. Right stick scrolls. Face buttons map to Enter, Escape, Tab.
+
+Two profiles: **Default** and **Tmux**, toggled with the PS button. No magic auto-switching system. You toggle. It maps differently.
+
+#### Always Active
+
+| Button | Action |
 |---|---|
-| **Lightbar** | White (idle) → blue pulse (working) → green flash (done). Colors configurable. |
-| **Profile switch** | PS button toggles Default ↔ Tmux. Button map and lightbar tint change instantly. |
-| **Player LEDs** | 5-dot bar: Player 1 center dot (Default), Player 2 inner pair (Tmux). PS5-native presets. |
-| **Mic mute** | Mute button toggles system microphone via Core Audio. LED lit = muted. |
-| **Haptics** | Rumble on state transitions (working → done, etc.) |
-| **Tray icon** | System tray with profile tooltip. Right-click to switch profile or quit. |
-| **Multi-agent** | Aggregates concurrent Claude Code + Codex sessions. Priority: working > done > idle. |
-| **Codex bridge** | Auto-deploys hook scripts to WSL on startup. Zero manual setup. |
+| Cross (×) | Enter |
+| Circle (○) | Escape |
+| Triangle (△) | Tab |
+| D-pad | Arrow keys (auto-repeat) |
+| Right stick | Scroll (vertical + horizontal) |
+| PS | Toggle profile (Default ↔ Tmux) |
+| Mute | Toggle system microphone |
+
+#### Default Profile
+
+| Button | Action |
+|---|---|
+| Square (□) | New session |
+| L1 | Previous window (Shift+Alt+Tab) |
+| R1 | Next window (Alt+Tab) |
+| R2 | Ctrl+C |
+| L3 | Ctrl+T |
+| R3 | Ctrl+P |
+
+#### Tmux Profile
+
+| Button | Action |
+|---|---|
+| Square (□) | tmux: new-window |
+| L1 | tmux: previous-window |
+| R1 | tmux: next-window |
+| R2 | tmux: kill-window |
+| L3 | Ctrl+T |
+| R3 | Ctrl+P |
+
+Tmux bindings are auto-detected from the running tmux server via WSL. Falls back to standard defaults if detection fails. Override in config if needed.
+
+### 🤖 Controller → AI Awareness
+
+DS4CC monitors Claude Code / Codex by watching state files. When the AI is:
+
+- **Working** → lightbar pulses blue
+- **Done** → lightbar flashes green, rumble kicks
+- **Error** → silently recovers (no visual noise)
+- **Idle** → default color
+
+It does this by:
+
+1. Installing hooks into `~/.claude/hooks/` (Claude Code) or `~/.codex/hooks/` (Codex)
+2. Hooks write per-session state files (`ds4cc_agent_<session_id>`) to `%TEMP%`
+3. Daemon polls those files every 500ms
+4. Aggregates across all sessions — priority: **working > done > idle**
+
+No WebSockets. No RPC. Just file-based state detection. Simple. Predictable. Stable.
+
+> **"Done" has a threshold.** Short tasks (< 10 min by default) go straight back to idle. Only real work triggers the green flash. No false celebrations.
+
+### 🔔 Feedback System
+
+Your controller becomes a status light.
+
+- **Lightbar** — color reflects agent state. Pulsing blue = thinking. Green = done. Configurable RGB.
+- **Rumble** — haptic patterns on state transitions. You feel when the AI finishes.
+- **Player LEDs** — 5-dot bar mirrors PS5-native presets. Player 1 = Default, Player 2 = Tmux.
+- **Mic mute** — mute button toggles system microphone via Core Audio. LED lit = muted. Works on any profile.
+
+The output loop runs every ~33ms to keep LEDs smooth. Rumble is async but shares the HID device safely.
+
+### 🧠 Agent State Model
+
+The agent can be in one of four states:
+
+```
+Working > Error > Done > Idle
+```
+
+Priority logic: if any session is working, the controller shows working. "Done" automatically becomes idle after a configurable timeout. Stale "working" states (crashed sessions) get cleaned up after 15 minutes.
+
+This prevents zombie states.
+
+### 🖥️ Tray Icon
+
+System tray icon shows current profile. Right-click to switch profile or quit. Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
+
+Profile switching is done via controller (PS button). The tray is for when you don't have the controller in hand.
+
+---
 
 ## Supported Controllers
 
@@ -62,6 +189,8 @@ The lightbar turns blue when the agent works, green when it's done.
 - DualSense or DualShock 4 controller (USB or Bluetooth)
 - **Optional:** WSL2 — needed for Tmux profile and Codex integration
 - **Optional:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://openai.com/index/codex/) for AI agent state feedback
+
+---
 
 ## Install
 
@@ -94,21 +223,19 @@ cp hooks/ds4cc-state.sh ~/.claude/hooks/
 chmod +x ~/.claude/hooks/ds4cc-state.sh
 ```
 
-Then register the hook events in your Claude Code settings. The easiest way:
+Then register the hook events:
 
 ```bash
 bash install-hooks.sh
 ```
 
-This merges the hook config from `hooks/setup.json` into `~/.claude/settings.json`, registering three lifecycle events:
+This merges the hook config into `~/.claude/settings.json`, registering three lifecycle events:
 
-| Claude Code Event | DS4CC Action |
+| Claude Code Event | What happens |
 |---|---|
-| `UserPromptSubmit` | Lightbar → **blue pulse** (working) |
-| `Stop` | Lightbar → **green** (done) if task exceeded threshold, else idle |
+| `UserPromptSubmit` | Lightbar → blue pulse (working) |
+| `Stop` | Lightbar → green (done) if task exceeded threshold, else idle |
 | `PostToolUseFailure` | Logged as error — agent self-recovers silently |
-
-> **Note:** "done" only fires if the task ran longer than a configurable threshold (default: 10 min). Short tasks go straight back to idle — no false green flashes.
 
 Restart Claude Code after installing hooks.
 
@@ -124,52 +251,12 @@ Manual bridge management:
 ~/.codex/hooks/status.sh    # Check status
 ```
 
-To disable Codex integration, add to your config:
+To disable:
 
 ```toml
 [codex]
 enabled = false
 ```
-
----
-
-## Button Mapping
-
-### Always Active
-
-| Button | Action |
-|---|---|
-| Cross (×) | Enter |
-| Circle (○) | Escape |
-| Triangle (△) | Tab |
-| D-pad | Arrow keys (auto-repeat) |
-| Right stick | Scroll (vertical + horizontal) |
-| PS | Toggle profile (Default ↔ Tmux) |
-| Mute | Toggle system microphone |
-
-### Default Profile
-
-| Button | Action |
-|---|---|
-| Square (□) | New session |
-| L1 | Previous window (Shift+Alt+Tab) |
-| R1 | Next window (Alt+Tab) |
-| R2 | Ctrl+C |
-| L3 | Ctrl+T |
-| R3 | Ctrl+P |
-
-### Tmux Profile
-
-| Button | Action |
-|---|---|
-| Square (□) | tmux: new-window |
-| L1 | tmux: previous-window |
-| R1 | tmux: next-window |
-| R2 | tmux: kill-window |
-| L3 | Ctrl+T |
-| R3 | Ctrl+P |
-
-Tmux bindings are auto-detected from the running tmux server via WSL. Falls back to standard defaults if detection fails. Override in config if needed.
 
 ---
 
@@ -224,6 +311,31 @@ Environment variables for the hook script:
 
 ---
 
+## What This Is Not
+
+It is not:
+
+- A plugin ecosystem
+- A distributed system
+- A GUI-heavy app
+- A hot-reloading dynamic bus architecture
+
+It is a controller-aware daemon with AI hooks.
+
+---
+
+## Technical Notes
+
+- Written in Rust (2024 edition)
+- Uses HID directly via `hidapi`
+- Async runtime: `tokio` with multi-threaded scheduler
+- Input read timeout: 5ms
+- Output write interval: ~33ms
+- State polling interval: 500ms
+- Mic mute: Windows Core Audio COM API (`IAudioEndpointVolume`)
+- System tray: `tray-icon` crate
+- Config: TOML with `serde` defaults
+
 ## Build from Source
 
 ```bash
@@ -255,6 +367,22 @@ tmux_detect.rs     Auto-detect tmux prefix + key bindings via WSL
 codex_setup.rs     Auto-deploy Codex hook scripts to WSL
 wsl.rs             Shared WSL command execution utility
 ```
+
+---
+
+## Why It Exists
+
+When you run AI agents, they're invisible. You don't know if they're stuck, thinking, or done.
+
+DS4CC turns that invisible state into:
+
+- **Light**
+- **Color**
+- **Vibration**
+
+You feel when the AI finishes.
+
+That's the point.
 
 ## License
 
