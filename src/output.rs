@@ -4,13 +4,14 @@
 ///
 /// DualSense USB: Report ID 0x02, 48 bytes
 ///   Byte 0:  report ID (0x02)
-///   Byte 1:  valid flag 0 (0x01 = rumble, 0x02 = right trigger effect, 0x04 = left trigger)
-///   Byte 2:  valid flag 1 (0x04 = lightbar, 0x01 = mic LED, 0x02 = player LEDs)
+///   Byte 1:  valid flag 0 (0x01 = rumble, 0x02 = haptics, 0x04 = right trigger, 0x08 = left trigger)
+///   Byte 2:  valid flag 1 (0x04 = lightbar, 0x10 = player LEDs)
 ///   Byte 3:  right rumble motor
 ///   Byte 4:  left rumble motor
-///   Byte 44: lightbar red
-///   Byte 45: lightbar green
-///   Byte 46: lightbar blue
+///   Byte 44: player indicator LEDs bitmask
+///   Byte 45: lightbar red
+///   Byte 46: lightbar green
+///   Byte 47: lightbar blue
 ///
 /// DualSense BT: Report ID 0x31, 78 bytes
 ///   Byte 0:  report ID (0x31)
@@ -88,7 +89,7 @@ fn build_dualsense_usb(state: &OutputState) -> Vec<u8> {
     let mut buf = vec![0u8; 48];
     buf[0] = 0x02;  // report ID
     buf[1] = 0x0F;  // valid_flag0: rumble + triggers (bits 0-3)
-    buf[2] = 0x55;  // valid_flag1: mic LED + lightbar + player LEDs + power (DS4W value)
+    buf[2] = 0x14;  // valid_flag1: lightbar (bit2=0x04) + player LEDs (bit4=0x10)
     buf[3] = state.rumble_right;
     buf[4] = state.rumble_left;
     buf[39] = 0x02; // valid_flag2: bit 1 = lightbar setup control enable
@@ -108,7 +109,7 @@ fn build_dualsense_bt(state: &OutputState, _seq: &mut u8) -> Vec<u8> {
     buf[0] = 0x31;  // report ID
     buf[1] = 0x02;  // DS4W: fixed data tag (no sequence numbering)
     buf[2] = 0x0F;  // valid_flag0: rumble + triggers
-    buf[3] = 0x55;  // valid_flag1: mic LED + lightbar + player LEDs + power
+    buf[3] = 0x14;  // valid_flag1: lightbar (bit2=0x04) + player LEDs (bit4=0x10)
     buf[4] = state.rumble_right;
     buf[5] = state.rumble_left;
     buf[40] = 0x02; // valid_flag2: bit 1 = lightbar setup control enable
