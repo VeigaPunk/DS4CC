@@ -40,10 +40,8 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 # 1. Download DS4CC-Setup.exe from Releases and install it
 #    https://github.com/VeigaPunk/DS4CC/releases
 
-# 2. Install the Claude Code hook (WSL or Git Bash):
-mkdir -p ~/.claude/hooks && cp hooks/ds4cc-state.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/ds4cc-state.sh
-
-# 3. Register the hook events — run from the repo root:
+# 2. Install Claude Code hooks (WSL or Git Bash):
+git clone https://github.com/VeigaPunk/DS4CC.git && cd DS4CC
 bash install-hooks.sh
 ```
 
@@ -224,21 +222,13 @@ target\release\ds4cc.exe
 
 ### Claude Code
 
-Three commands, run from the repo root in WSL or Git Bash:
-
-```bash
-mkdir -p ~/.claude/hooks
-cp hooks/ds4cc-state.sh ~/.claude/hooks/
-chmod +x ~/.claude/hooks/ds4cc-state.sh
-```
-
-Then register the hook events:
+Run from the repo root in WSL or Git Bash:
 
 ```bash
 bash install-hooks.sh
 ```
 
-This merges the hook config into `~/.claude/settings.json`, registering three lifecycle events:
+This copies the hook script to `~/.claude/hooks/`, strips CRLF line endings, and merges the hook config into `~/.claude/settings.json`, registering three lifecycle events:
 
 | Claude Code Event | What happens |
 |---|---|
