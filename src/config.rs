@@ -146,21 +146,57 @@ impl Default for CodexConfig {
 ///
 /// Install with `install-hooks.sh`, which copies the plugin to
 /// `~/.config/opencode/plugins/ds4cc-opencode.js`.
+///
+/// Button values are **OpenCode action names** (e.g., "session:next") by default.
+/// At startup these are resolved from `~/.config/opencode/opencode.json` via WSL.
+/// If auto-detection fails, hardcoded OpenCode defaults are used as fallback.
+///
+/// You can also specify direct key combos (e.g., "ctrl+]", "<leader>n") to bypass
+/// the action-name resolution — useful for custom overrides.
+///
+/// Empty strings mean "unmapped" — the button does nothing in OpenCode profile.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct OpenCodeConfig {
-    /// Whether the OpenCode plugin was installed (informational; not enforced by daemon).
+    /// Enable OpenCode profile (PS button cycles to it).
     pub enabled: bool,
-    /// Seconds the task must run before "done" fires. Passed to the plugin via the
-    /// DS4CC_DONE_THRESHOLD_S environment variable (set in your shell profile).
+    /// Auto-detect keybinds from ~/.config/opencode/opencode.json via WSL.
+    pub auto_detect: bool,
+    /// Seconds the task must run before "done" fires. Passed to the plugin via
+    /// DS4CC_DONE_THRESHOLD_S (set in your shell profile).
     pub done_threshold_s: u64,
+    /// Leader key combo fallback (e.g., "ctrl+x"). Used when auto-detect finds no leader.
+    pub leader: String,
+    // Button → OpenCode action names or direct key combos (empty = unmapped)
+    pub l1: String,
+    pub r1: String,
+    pub l2: String,
+    pub r2: String,
+    pub l3: String,
+    pub r3: String,
+    pub square: String,
+    pub share: String,
+    pub options: String,
+    pub touchpad: String,
 }
 
 impl Default for OpenCodeConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            done_threshold_s: 600, // 10 minutes
+            auto_detect: true,
+            done_threshold_s: 600,        // 10 minutes
+            leader: "ctrl+x".into(),      // OpenCode default leader
+            l1: "session:prev".into(),
+            r1: "session:next".into(),
+            l2: "".into(),                // unmapped (L2 = Ctrl+Win hold in all profiles)
+            r2: "".into(),                // unmapped
+            l3: "".into(),                // unmapped (L3 = Ctrl+T in all profiles)
+            r3: "".into(),                // unmapped (R3 = Ctrl+P in all profiles)
+            square: "app:new-session".into(),
+            share: "".into(),
+            options: "".into(),
+            touchpad: "".into(),
         }
     }
 }
