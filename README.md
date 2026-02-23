@@ -32,11 +32,7 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 - **Act like a programmable dev companion** — buttons map to real keystrokes
 - **Pair with [Wispr](https://wispr.com/) for a keyboard-free workflow** — voice handles text, controller handles everything else
 
-It's not a giant framework. It's one daemon. One binary. One job:
-
 **Read controller input. Watch AI state. Send feedback back to the controller.**
-
-That's it.
 
 ---
 
