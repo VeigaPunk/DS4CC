@@ -1,8 +1,8 @@
 /// Rumble engine: fires haptic patterns on state transitions and time thresholds.
 ///
-/// Working → Done:     two short pulses (notification feel)
-/// Any → Error:        single strong pulse
-/// Idle > 3 min:       single strong pulse (attention reminder)
+/// Working → Done (>= 5 min):  two short pulses (notification feel)
+/// Idle > 3 min:                single strong pulse (attention reminder)
+/// Error:                       no rumble — agent keeps resolving, not worth alarming
 
 use crate::state::AgentState;
 use tokio::time::{sleep, Duration};
@@ -23,9 +23,6 @@ pub fn pattern_for_transition(from: AgentState, to: AgentState) -> Option<Vec<Ru
             RumbleStep { left: 180, right: 180, duration_ms: 120 },
             RumbleStep { left: 0, right: 0, duration_ms: 100 }, // pause
             RumbleStep { left: 180, right: 180, duration_ms: 120 },
-        ]),
-        (_, AgentState::Error) => Some(vec![
-            RumbleStep { left: 255, right: 255, duration_ms: 300 },
         ]),
         _ => None,
     }
@@ -64,9 +61,10 @@ mod tests {
     }
 
     #[test]
-    fn error_transition_has_pattern() {
-        let pattern = pattern_for_transition(AgentState::Idle, AgentState::Error);
-        assert!(pattern.is_some());
+    fn error_transition_no_rumble() {
+        // Error state is intentionally silent — agent self-recovers, no alarm needed.
+        assert!(pattern_for_transition(AgentState::Idle, AgentState::Error).is_none());
+        assert!(pattern_for_transition(AgentState::Working, AgentState::Error).is_none());
     }
 
     #[test]

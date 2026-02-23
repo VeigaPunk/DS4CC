@@ -7,7 +7,8 @@
 ///   working > error > done > idle
 ///
 /// "working" files older than `stale_timeout_s` are ignored (crashed sessions).
-/// After `idle_timeout_s` in done/error, auto-transitions to idle.
+/// After `idle_timeout_s` in done, auto-transitions to idle.
+/// Error has no special visual/haptic treatment — the agent self-recovers silently.
 
 use std::path::PathBuf;
 use std::time::{Duration as StdDuration, Instant, SystemTime};
@@ -133,9 +134,9 @@ pub async fn poll_state_file(
     loop {
         ticker.tick().await;
 
-        // Auto-idle: if we've been in "done" or "error" long enough, transition to idle
+        // Auto-idle: if we've been in "done" long enough, transition to idle
         if idle_timeout_s > 0
-            && (last_state == AgentState::Done || last_state == AgentState::Error)
+            && last_state == AgentState::Done
             && state_changed_at.elapsed() >= Duration::from_secs(idle_timeout_s)
         {
             log::info!("Auto-idle: {last_state} → idle (after {idle_timeout_s}s)");
