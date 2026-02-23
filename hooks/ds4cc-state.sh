@@ -32,14 +32,13 @@ if [ -z "${STATE_DIR:-}" ] && [ -d "/mnt/c" ] && [ -f /proc/version ] && grep -q
 fi
 
 if [ -z "${STATE_DIR:-}" ] && [ -d "/mnt/c" ] && [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then
-    # Fall back to the Windows TEMP directory when available.
-    WIN_TEMP_WIN=$(cmd.exe /C "echo %TEMP%" 2>/dev/null | tr -d '\r' | tr -d '\n' || true)
-    if [ -n "$WIN_TEMP_WIN" ] && command -v wslpath >/dev/null 2>&1; then
-        WIN_TEMP=$(wslpath -u "$WIN_TEMP_WIN" 2>/dev/null || true)
-        if [ -n "$WIN_TEMP" ] && [ -d "$WIN_TEMP" ]; then
-            STATE_DIR="$WIN_TEMP"
+    # Fast path: scan /mnt/c/Users/*/AppData/Local/Temp directly (no cmd.exe needed)
+    for _d in /mnt/c/Users/*/AppData/Local/Temp; do
+        if [ -d "$_d" ]; then
+            STATE_DIR="$_d"
+            break
         fi
-    fi
+    done
 fi
 
 if [ -z "${STATE_DIR:-}" ] && [ -n "${TEMP:-}" ]; then
