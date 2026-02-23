@@ -110,3 +110,7 @@ fi
 
 echo ""
 echo "Done. Restart Claude Code for hooks to take effect."
+
+# TODO: Add OpenCode plugin support
+# OpenCode has a first-class plugin system (session.status events) that can drive
+# the same state-file system. Deploy plugin to ~/.config/opencode/plugins/ on startup.

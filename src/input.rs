@@ -92,8 +92,6 @@ impl Default for UnifiedInput {
 #[derive(Debug)]
 pub enum ParseError {
     TooShort { expected: usize, got: usize },
-    BadCrc,
-    UnexpectedReportId(u8),
 }
 
 impl std::fmt::Display for ParseError {
@@ -101,10 +99,6 @@ impl std::fmt::Display for ParseError {
         match self {
             ParseError::TooShort { expected, got } => {
                 write!(f, "report too short: expected {expected}, got {got}")
-            }
-            ParseError::BadCrc => f.write_str("CRC-32 validation failed"),
-            ParseError::UnexpectedReportId(id) => {
-                write!(f, "unexpected report ID: 0x{id:02X}")
             }
         }
     }
