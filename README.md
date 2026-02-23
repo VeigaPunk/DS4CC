@@ -173,7 +173,7 @@ This prevents zombie states.
 
 ### 🖥️ Tray Icon
 
-System tray icon shows current profile. Right-click to start Wispr, enable auto-start-up, restart or exit app. Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
+PS button switches profile (shortcut mappings). System tray icon shows current profile. Right-click to start Wispr, enable auto-start-up, restart or exit app. Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
 
 ---
 
