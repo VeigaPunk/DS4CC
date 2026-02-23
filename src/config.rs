@@ -12,7 +12,7 @@ pub struct Config {
     pub scroll: ScrollConfig,
     pub tmux: TmuxConfig,
     pub codex: CodexConfig,
-    /// Directory where agent state files are written (gamepadcc_agent_*)
+    /// Directory where agent state files are written (ds4cc_agent_*)
     pub state_dir: String,
     pub poll_interval_ms: u64,
     /// Seconds after "done" before auto-transitioning to "idle" (0 = disabled)

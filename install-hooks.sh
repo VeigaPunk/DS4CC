@@ -1,25 +1,25 @@
 #!/bin/bash
-# GamePadCC hook installer
-# Run this from the GamePadCC repo directory to set up Claude Code hooks.
+# DS4CC hook installer
+# Run this from the DS4CC repo directory to set up Claude Code hooks.
 # Works from Windows (Git Bash) and WSL.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOOK_SRC="$SCRIPT_DIR/hooks/gamepadcc-state.sh"
+HOOK_SRC="$SCRIPT_DIR/hooks/ds4cc-state.sh"
 
 if [ ! -f "$HOOK_SRC" ]; then
-    echo "Error: hooks/gamepadcc-state.sh not found. Run this from the GamePadCC repo root."
+    echo "Error: hooks/ds4cc-state.sh not found. Run this from the DS4CC repo root."
     exit 1
 fi
 
 # Install hook script
 HOOK_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOK_DIR"
-cp "$HOOK_SRC" "$HOOK_DIR/gamepadcc-state.sh"
-sed -i 's/\r$//' "$HOOK_DIR/gamepadcc-state.sh" 2>/dev/null || true
-chmod +x "$HOOK_DIR/gamepadcc-state.sh"
-echo "Installed hook script to $HOOK_DIR/gamepadcc-state.sh"
+cp "$HOOK_SRC" "$HOOK_DIR/ds4cc-state.sh"
+sed -i 's/\r$//' "$HOOK_DIR/ds4cc-state.sh" 2>/dev/null || true
+chmod +x "$HOOK_DIR/ds4cc-state.sh"
+echo "Installed hook script to $HOOK_DIR/ds4cc-state.sh"
 
 # Merge hooks into settings.json
 SETTINGS="$HOME/.claude/settings.json"
@@ -33,7 +33,7 @@ if os.path.exists(path):
     with open(path) as f:
         cfg = json.load(f)
 
-hook_entry = [{"matcher": "", "hooks": [{"type": "command", "command": "~/.claude/hooks/gamepadcc-state.sh"}]}]
+hook_entry = [{"matcher": "", "hooks": [{"type": "command", "command": "~/.claude/hooks/ds4cc-state.sh"}]}]
 hooks = cfg.get("hooks", {})
 hooks["UserPromptSubmit"] = hook_entry
 hooks["Stop"] = hook_entry
@@ -52,7 +52,7 @@ const fs = require('fs');
 const path = process.argv[1];
 let cfg = {};
 try { cfg = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
-const hook = [{matcher: '', hooks: [{type: 'command', command: '~/.claude/hooks/gamepadcc-state.sh'}]}];
+const hook = [{matcher: '', hooks: [{type: 'command', command: '~/.claude/hooks/ds4cc-state.sh'}]}];
 cfg.hooks = cfg.hooks || {};
 cfg.hooks.UserPromptSubmit = hook;
 cfg.hooks.Stop = hook;
@@ -78,7 +78,7 @@ if [ -d "$CODEX_DIR" ]; then
     # Copy all Codex hook scripts
     CODEX_SRC="$SCRIPT_DIR/hooks/codex"
     if [ -d "$CODEX_SRC" ]; then
-        for f in codex-hook-bridge.py gamepadcc-state.sh start.sh stop.sh status.sh install-from-claude.sh; do
+        for f in codex-hook-bridge.py ds4cc-state.sh start.sh stop.sh status.sh install-from-claude.sh; do
             if [ -f "$CODEX_SRC/$f" ]; then
                 cp "$CODEX_SRC/$f" "$CODEX_HOOK_DIR/$f"
                 sed -i 's/\r$//' "$CODEX_HOOK_DIR/$f" 2>/dev/null || true
@@ -110,7 +110,3 @@ fi
 
 echo ""
 echo "Done. Restart Claude Code for hooks to take effect."
-
-# TODO: Add OpenCode plugin support
-# OpenCode has a first-class plugin system (session.status events) that can drive
-# the same state-file system. Deploy plugin to ~/.config/opencode/plugins/ on startup.
