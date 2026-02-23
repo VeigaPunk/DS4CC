@@ -6,6 +6,7 @@ mod hid;
 mod input;
 mod lightbar;
 mod mapper;
+mod mic;
 mod output;
 mod rumble;
 mod state;
@@ -150,6 +151,7 @@ async fn run_input_loop(
     let mut consecutive_errors = 0u32;
     let mut first_report = true;
     let mut last_profile = mapper_state.profile();
+    let mut last_mute = false;
 
     loop {
         match handle.read(&mut buf) {
@@ -191,7 +193,14 @@ async fn run_input_loop(
                             log::debug!("Action: {action:?}");
                         }
 
-                        // Update tray icon and blink player LED on profile change
+                        // Mute button — toggle system mic on press (any profile)
+                        let mute_now = unified.buttons.mute;
+                        if mute_now && !last_mute {
+                            tokio::task::spawn_blocking(mic::toggle_mute);
+                        }
+                        last_mute = mute_now;
+
+                        // Update tray icon and player LED on profile change
                         let current_profile = mapper_state.profile();
                         if current_profile != last_profile {
                             let _ = tray_tx.send(tray::TrayCmd::SetProfile(current_profile));
