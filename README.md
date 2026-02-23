@@ -189,7 +189,7 @@ Bluetooth supports all features except Microphone Input (WIP).
 ## Requirements
 
 - Windows 10 / 11
-- DualSense or DualShock 4 controller (USB or Bluetooth)
+- DualSense controller (USB or Bluetooth)
 - **Optional:** WSL2 — needed for Tmux profile and Codex integration
 - **Optional:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://openai.com/index/codex/) for AI agent state feedback
 
@@ -350,7 +350,7 @@ wsl.rs             Shared WSL command execution utility
 
 ## Why It Exists
 
-When you run AI agents, they're invisible. You don't know if they're stuck, thinking, or done.
+When you run multiple AI agents, they can become hard to oversee. You might not know if they're working, idle or done.
 
 DS4CC turns that invisible state into:
 
