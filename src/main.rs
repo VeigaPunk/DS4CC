@@ -74,9 +74,11 @@ async fn main() {
 
     // State channel (persists across reconnections)
     let (state_tx, state_rx) = watch::channel(AgentState::Idle);
-    // Per-agent idle reminder channel (Arc<Mutex> so it survives reconnections)
+    // Per-agent rumble channels (Arc<Mutex> so they survive reconnections)
     let (idle_reminder_tx, idle_reminder_rx) = mpsc::channel::<()>(4);
+    let (done_rumble_tx, done_rumble_rx) = mpsc::channel::<()>(4);
     let idle_reminder_rx = Arc::new(tokio::sync::Mutex::new(idle_reminder_rx));
+    let done_rumble_rx = Arc::new(tokio::sync::Mutex::new(done_rumble_rx));
 
     // Spawn state poller (scans ds4cc_agent_* files in state_dir)
     let state_dir = PathBuf::from(&cfg.state_dir);
@@ -85,7 +87,7 @@ async fn main() {
     let stale_timeout_s = cfg.stale_timeout_s;
     let idle_reminder_s = cfg.idle_reminder_s;
     tokio::spawn(async move {
-        state::poll_state_file(state_dir, poll_ms, idle_timeout_s, stale_timeout_s, idle_reminder_s, state_tx, idle_reminder_tx).await;
+        state::poll_state_file(state_dir, poll_ms, idle_timeout_s, stale_timeout_s, idle_reminder_s, WORKING_DONE_MIN_MS, state_tx, idle_reminder_tx, done_rumble_tx).await;
     });
 
     // Main connection loop — reconnects on disconnect
@@ -137,8 +139,9 @@ async fn main() {
         let mut state_rx_output = state_rx.clone();
         let player_leds_out = Arc::clone(&player_leds);
         let idle_rx = Arc::clone(&idle_reminder_rx);
+        let done_rx = Arc::clone(&done_rumble_rx);
         let output_task = tokio::spawn(async move {
-            run_output_loop(output_handle, ct, conn, lightbar_cfg_clone, &mut state_rx_output, player_leds_out, idle_rx).await;
+            run_output_loop(output_handle, ct, conn, lightbar_cfg_clone, &mut state_rx_output, player_leds_out, idle_rx, done_rx).await;
         });
 
         // Run input loop — returns when device disconnects
@@ -245,7 +248,7 @@ async fn run_input_loop(
 
 /// Minimum working duration before the Working → Done rumble fires.
 /// Short tasks don't warrant a notification; only surface it for real work.
-const WORKING_DONE_MIN_MS: u64 = 5 * 60 * 1000; // 5 minutes
+const WORKING_DONE_MIN_MS: u64 = 7 * 60 * 1000; // 7 minutes
 
 /// Player indicator LED presets — mimics PS5 native player assignment.
 ///   Player 1 (Default profile) → center dot only
@@ -253,8 +256,7 @@ const WORKING_DONE_MIN_MS: u64 = 5 * 60 * 1000; // 5 minutes
 const PLAYER1_LEDS: u8 = 0x04; // center only
 const PLAYER2_LEDS: u8 = 0x0A; // inner two (0x02 | 0x08)
 
-/// Output loop: update lightbar and rumble based on state changes.
-/// Receives per-agent idle reminder signals from the state poller.
+/// Output loop: update lightbar based on aggregated state, fire rumble from per-agent signals.
 async fn run_output_loop(
     handle: hid::HidHandle,
     ct: controller::ControllerType,
@@ -263,6 +265,7 @@ async fn run_output_loop(
     state_rx: &mut watch::Receiver<AgentState>,
     player_leds: Arc<AtomicU8>,
     idle_reminder_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<()>>>,
+    done_rumble_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<()>>>,
 ) {
     let mut bt_seq = 0u8;
     let mut current_state = AgentState::Idle;
@@ -285,6 +288,7 @@ async fn run_output_loop(
 
     let mut ticker = tokio::time::interval(Duration::from_millis(33)); // ~30fps for smooth pulse
     let mut idle_rx = idle_reminder_rx.lock().await;
+    let mut done_rx = done_rumble_rx.lock().await;
 
     loop {
         tokio::select! {
@@ -296,21 +300,14 @@ async fn run_output_loop(
             _ = idle_rx.recv() => {
                 // Per-agent idle reminder — fire rumble
                 log::info!("Per-agent idle reminder rumble triggered");
-                let rumble_handle = handle.clone_handle();
-                let rumble_ct = ct;
-                let rumble_conn = conn;
-                tokio::spawn(async move {
-                    let mut seq = 0u8;
-                    rumble::play_pattern(&rumble::idle_reminder_pattern(), |left, right| {
-                        let out = OutputState {
-                            rumble_left: left,
-                            rumble_right: right,
-                            ..Default::default()
-                        };
-                        let report = output::build_report(rumble_ct, rumble_conn, &out, &mut seq);
-                        rumble_handle.write(&report);
-                    }).await;
-                });
+                fire_rumble(&handle, ct, conn, &rumble::idle_reminder_pattern());
+            }
+            _ = done_rx.recv() => {
+                // Per-agent Working → Done — fire celebratory rumble
+                log::info!("Per-agent done rumble triggered");
+                if let Some(pattern) = rumble::pattern_for_transition(AgentState::Working, AgentState::Done) {
+                    fire_rumble(&handle, ct, conn, &pattern);
+                }
             }
             result = state_rx.changed() => {
                 if result.is_err() {
@@ -319,54 +316,36 @@ async fn run_output_loop(
                 }
                 let new_state = *state_rx.borrow();
                 if new_state != current_state {
-                    let old_state = current_state;
-                    let elapsed_in_old = state_start.elapsed().as_millis() as u64;
+                    log::debug!("Lightbar transition {:?} → {:?}", current_state, new_state);
                     current_state = new_state;
                     state_start = Instant::now();
-
-                    // Working → Done only rumbles if the task ran long enough to be meaningful.
-                    // All other transitions fire unconditionally.
-                    let long_enough = !(old_state == AgentState::Working
-                        && new_state == AgentState::Done
-                        && elapsed_in_old < WORKING_DONE_MIN_MS);
-
-                    if long_enough {
-                        log::debug!(
-                            "Transition {:?} → {:?} after {}s",
-                            old_state, new_state, elapsed_in_old / 1000
-                        );
-                    } else {
-                        log::debug!(
-                            "Working → Done after {}s (< {}s threshold) — skipping rumble",
-                            elapsed_in_old / 1000,
-                            WORKING_DONE_MIN_MS / 1000
-                        );
-                    }
-
-                    // Fire rumble pattern if applicable
-                    if long_enough {
-                        if let Some(pattern) = rumble::pattern_for_transition(old_state, new_state) {
-                            let rumble_handle = handle.clone_handle();
-                            let rumble_ct = ct;
-                            let rumble_conn = conn;
-                            tokio::spawn(async move {
-                                let mut seq = 0u8;
-                                rumble::play_pattern(&pattern, |left, right| {
-                                    let out = OutputState {
-                                        rumble_left: left,
-                                        rumble_right: right,
-                                        ..Default::default()
-                                    };
-                                    let report = output::build_report(rumble_ct, rumble_conn, &out, &mut seq);
-                                    rumble_handle.write(&report);
-                                }).await;
-                            });
-                        }
-                    }
                 }
             }
         }
     }
+}
+
+/// Spawn a rumble pattern on the controller (non-blocking).
+fn fire_rumble(
+    handle: &hid::HidHandle,
+    ct: controller::ControllerType,
+    conn: controller::ConnectionType,
+    pattern: &[rumble::RumbleStep],
+) {
+    let rumble_handle = handle.clone_handle();
+    let pattern = pattern.to_vec();
+    tokio::spawn(async move {
+        let mut seq = 0u8;
+        rumble::play_pattern(&pattern, |left, right| {
+            let out = OutputState {
+                rumble_left: left,
+                rumble_right: right,
+                ..Default::default()
+            };
+            let report = output::build_report(ct, conn, &out, &mut seq);
+            rumble_handle.write(&report);
+        }).await;
+    });
 }
 
 fn send_output(

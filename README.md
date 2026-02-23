@@ -140,15 +140,13 @@ DS4CC monitors Claude Code and Codex by watching state files. When the AI is:
 
 **Codex** — the daemon polls Codex JSONL session logs directly via `\\wsl.localhost\` UNC paths. No hooks, no bridge scripts, no external processes. It tail-follows the JSONL files, parses events (`user_message`, `task_complete`, etc.), and writes the same state files.
 
-Both feed into the same aggregator:
+State files (`ds4cc_agent_<session_id>`) land in `%TEMP%`. The daemon polls them every 500ms and aggregates across all sessions — priority: **working > done > idle**.
 
-1. State files (`ds4cc_agent_<session_id>`) land in `%TEMP%`
-2. Daemon polls those files every 500ms
-3. Aggregates across all sessions — priority: **working > done > idle**
-4. **Per-agent idle tracking** — each agent's idle time is tracked individually. If any single agent sits idle for 8 minutes, the controller rumbles as an attention reminder — even if other agents are still working.
+Each agent is tracked individually:
 
-
-> **"Done" has a threshold.** Short tasks (< 10 min by default) go straight back to idle. Only real work triggers the green flash. No false celebrations.
+- **Done rumble** — when any agent finishes a task that took >= 7 minutes, the controller rumbles. Short tasks go straight back to idle without notification.
+- **Idle reminder** — when any agent sits idle for 8 minutes, an attention rumble fires — even if other agents are still working.
+- **"Done" threshold** — short tasks (< 10 min by default) write "idle" instead of "done" at the hook level. Only real work triggers the green flash.
 
 ### 🔔 Feedback System
 

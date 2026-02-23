@@ -135,22 +135,27 @@ fn aggregate_agent_states(state_dir: &PathBuf, stale_timeout: StdDuration) -> Ag
 }
 
 /// Polls agent state files and sends aggregated state changes to a channel.
-/// Also tracks per-agent idle time and sends a signal when any individual agent
-/// has been idle for longer than `idle_reminder_s`.
+/// Tracks per-agent state transitions:
+/// - Idle reminder: fires when any individual agent has been idle >= `idle_reminder_s`
+/// - Done rumble: fires when any individual agent transitions Working → Done
+///   after working >= `done_threshold_ms`
 pub async fn poll_state_file(
     state_dir: PathBuf,
     poll_ms: u64,
     idle_timeout_s: u64,
     stale_timeout_s: u64,
     idle_reminder_s: u64,
+    done_threshold_ms: u64,
     tx: tokio::sync::watch::Sender<AgentState>,
     idle_reminder_tx: mpsc::Sender<()>,
+    done_rumble_tx: mpsc::Sender<()>,
 ) {
     let mut ticker = interval(Duration::from_millis(poll_ms));
     let mut last_state = AgentState::Idle;
     let mut state_changed_at = Instant::now();
     let stale_timeout = StdDuration::from_secs(stale_timeout_s);
     let idle_reminder_dur = Duration::from_secs(idle_reminder_s);
+    let done_threshold = Duration::from_millis(done_threshold_ms);
 
     // Per-agent tracking: agent_id → (last known state, timestamp of that state)
     let mut agent_tracker: HashMap<String, (AgentState, Instant)> = HashMap::new();
@@ -181,43 +186,57 @@ pub async fn poll_state_file(
             let _ = tx.send(aggregated);
         }
 
-        // Per-agent idle reminder tracking
-        if idle_reminder_s > 0 {
-            let now = Instant::now();
+        // Per-agent tracking (idle reminders + Working→Done rumble)
+        let now = Instant::now();
 
-            // Update tracker with current agent states
-            for (id, state) in &current_agents {
-                match agent_tracker.get(id) {
-                    Some((prev_state, _)) if *prev_state == *state => {
-                        // State unchanged — check idle threshold
-                    }
-                    _ => {
-                        // New agent or state changed — update tracker, reset reminder
-                        agent_tracker.insert(id.clone(), (*state, now));
-                        reminder_fired.remove(id);
+        for (id, state) in &current_agents {
+            match agent_tracker.get(id) {
+                Some((prev_state, since)) if *prev_state == *state => {
+                    // State unchanged — check idle threshold
+                    if idle_reminder_s > 0
+                        && *state == AgentState::Idle
+                        && !reminder_fired.contains(id)
+                        && now.duration_since(*since) >= idle_reminder_dur
+                    {
+                        log::info!(
+                            "Per-agent idle reminder: agent {id} idle for {}s",
+                            now.duration_since(*since).as_secs()
+                        );
+                        reminder_fired.insert(id.clone());
+                        let _ = idle_reminder_tx.try_send(());
                     }
                 }
-            }
-
-            // Remove agents that no longer have state files
-            agent_tracker.retain(|id, _| current_agents.contains_key(id));
-            reminder_fired.retain(|id| current_agents.contains_key(id));
-
-            // Check if any agent has been idle long enough
-            for (id, (state, since)) in &agent_tracker {
-                if *state == AgentState::Idle
-                    && !reminder_fired.contains(id)
-                    && now.duration_since(*since) >= idle_reminder_dur
-                {
-                    log::info!(
-                        "Per-agent idle reminder: agent {id} idle for {}s",
-                        now.duration_since(*since).as_secs()
-                    );
-                    reminder_fired.insert(id.clone());
-                    let _ = idle_reminder_tx.try_send(());
+                Some((prev_state, since)) => {
+                    // State changed — check for Working → Done transition
+                    let elapsed = now.duration_since(*since);
+                    if *prev_state == AgentState::Working && *state == AgentState::Done {
+                        if elapsed >= done_threshold {
+                            log::info!(
+                                "Per-agent done: agent {id} worked for {}s → rumble",
+                                elapsed.as_secs()
+                            );
+                            let _ = done_rumble_tx.try_send(());
+                        } else {
+                            log::debug!(
+                                "Per-agent done: agent {id} worked {}s (< {}s threshold) — skipping rumble",
+                                elapsed.as_secs(),
+                                done_threshold.as_secs()
+                            );
+                        }
+                    }
+                    agent_tracker.insert(id.clone(), (*state, now));
+                    reminder_fired.remove(id);
+                }
+                None => {
+                    // New agent
+                    agent_tracker.insert(id.clone(), (*state, now));
                 }
             }
         }
+
+        // Remove agents that no longer have state files
+        agent_tracker.retain(|id, _| current_agents.contains_key(id));
+        reminder_fired.retain(|id| current_agents.contains_key(id));
     }
 }
 
