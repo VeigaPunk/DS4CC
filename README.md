@@ -30,7 +30,7 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 - **React to Claude Code / Codex activity** — lightbar changes when the AI is thinking
 - **Give you rumble + lightbar feedback** when things happen
 - **Act like a programmable dev companion** — buttons map to real keystrokes
-- **Pair with [Wispr](https://wispr.com/) for a keyboard-free workflow** — voice handles text, controller handles everything else
+- **Pair with [Wispr](https://wisprflow.ai/) for a keyboard-free workflow** — voice handles text, controller handles everything else
 
 ---
 
@@ -118,7 +118,7 @@ Tmux bindings are auto-detected from the running tmux server via WSL. Falls back
 
 ### 🎙️ Controller + Wispr = No Keyboard
 
-DS4CC was designed to pair with [Wispr Flow](https://wispr.com/) — a voice-to-text tool that lets you dictate code, commands, and prompts.
+DS4CC was designed to pair with [Wispr Flow](https://wisprflow.ai/) — a voice-to-text tool that lets you dictate code, commands, and prompts.
 
 The idea is simple:
 
@@ -388,7 +388,7 @@ DS4CC turns that invisible state into:
 
 You feel when the AI finishes.
 
-Pair it with [Wispr](https://wispr.com/) and you don't even need a keyboard. Voice dictates. Controller navigates. The lightbar tells you what the AI is doing. You lean back and ship code from the couch.
+Pair it with [Wispr](https://wisprflow.ai/) and you don't even need a keyboard. Voice dictates. Controller navigates. The lightbar tells you what the AI is doing. You lean back and ship code from the couch.
 
 That's the point.
 
