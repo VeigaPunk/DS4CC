@@ -116,18 +116,22 @@ impl Default for TmuxConfig {
     }
 }
 
-/// Codex hook bridge configuration.
+/// Codex JSONL poller configuration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct CodexConfig {
-    /// Enable auto-setup of Codex hook bridge on startup.
-    /// When true, deploys hook scripts to WSL and starts the bridge daemon.
+    /// Enable native Codex JSONL polling via WSL UNC paths.
     pub enabled: bool,
+    /// Seconds the task must run before "done" fires (shorter tasks go straight to idle).
+    pub done_threshold_s: u64,
 }
 
 impl Default for CodexConfig {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            done_threshold_s: 600, // 10 minutes
+        }
     }
 }
 

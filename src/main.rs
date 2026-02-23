@@ -1,4 +1,4 @@
-mod codex_setup;
+mod codex_poll;
 mod config;
 mod controller;
 mod crc32;
@@ -43,9 +43,21 @@ async fn main() {
         None
     };
 
-    // Auto-setup Codex hook bridge via WSL
+    // Spawn native Codex JSONL poller (reads session files via WSL UNC path)
     if cfg.codex.enabled {
-        codex_setup::setup();
+        let state_dir = PathBuf::from(&cfg.state_dir);
+        let done_threshold_s = cfg.codex.done_threshold_s;
+        let poll_ms = cfg.poll_interval_ms;
+        tokio::spawn(async move {
+            // Resolve the WSL sessions path (blocking I/O)
+            let sessions_dir = tokio::task::spawn_blocking(codex_poll::resolve_sessions_dir)
+                .await
+                .ok()
+                .flatten();
+            if let Some(dir) = sessions_dir {
+                codex_poll::run(dir, state_dir, done_threshold_s, poll_ms).await;
+            }
+        });
     }
 
     // Tray icon
