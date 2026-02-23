@@ -169,7 +169,7 @@ impl Default for LightbarConfig {
             idle: ColorConfig { r: 255, g: 140, b: 0 },   // orange
             working: ColorConfig { r: 0, g: 100, b: 255 }, // blue
             done: ColorConfig { r: 0, g: 255, b: 0 },     // green
-            error: ColorConfig { r: 255, g: 0, b: 0 },    // red
+            error: ColorConfig { r: 0, g: 0, b: 0 },       // off (configurable)
             pulse_period_ms: 2000,
         }
     }

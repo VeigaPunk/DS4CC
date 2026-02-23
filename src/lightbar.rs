@@ -4,7 +4,7 @@
 ///   Idle    → orange, solid
 ///   Working → blue, pulsing (sinusoidal brightness)
 ///   Done    → green, solid
-///   Error   → same as Working (agent is still active, resolving the error)
+///   Error   → off (black) by default, solid, configurable via [lightbar.error]
 
 use crate::config::LightbarConfig;
 use crate::state::AgentState;
@@ -18,8 +18,8 @@ pub fn compute_color(
     match state {
         AgentState::Idle => (config.idle.r, config.idle.g, config.idle.b),
         AgentState::Done => (config.done.r, config.done.g, config.done.b),
-        // Error is treated identically to Working — the agent keeps going, no need to alarm the user.
-        AgentState::Working | AgentState::Error => {
+        AgentState::Error => (config.error.r, config.error.g, config.error.b),
+        AgentState::Working => {
             // Sinusoidal pulse: brightness oscillates between 0.3 and 1.0
             let period = config.pulse_period_ms as f64;
             let phase = (elapsed_ms as f64 / period) * std::f64::consts::TAU;
@@ -75,11 +75,13 @@ mod tests {
     }
 
     #[test]
-    fn error_matches_working() {
+    fn error_is_off_by_default() {
         let cfg = default_config();
-        // Error and Working should produce identical output at the same elapsed time.
-        let (r_e, g_e, b_e) = compute_color(&cfg, AgentState::Error, 1000);
-        let (r_w, g_w, b_w) = compute_color(&cfg, AgentState::Working, 1000);
-        assert_eq!((r_e, g_e, b_e), (r_w, g_w, b_w));
+        // Default error color is black (off) — no visual noise while agent self-recovers.
+        let (r, g, b) = compute_color(&cfg, AgentState::Error, 0);
+        assert_eq!((r, g, b), (0, 0, 0));
+        // Solid — same at any elapsed time.
+        let (r2, g2, b2) = compute_color(&cfg, AgentState::Error, 5000);
+        assert_eq!((r, g, b), (r2, g2, b2));
     }
 }
