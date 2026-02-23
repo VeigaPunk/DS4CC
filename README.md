@@ -87,9 +87,9 @@ Just loops, channels, and a controller.
 
 ### 🎮 Controller → Keystrokes
 
-Press buttons → things happen. D-pad sends arrow keys with auto-repeat. Right stick scrolls. Face buttons map to Enter, Escape, Tab.
+Press buttons → things happen. D-pad sends arrow keys. Right stick scrolls. Face buttons map to Enter, Escape, Tab.
 
-Two profiles: **Default** and **Tmux**, toggled with the PS button. No magic auto-switching system. You toggle. It maps differently.
+Two profiles: **Default** and **Tmux**, toggled with the PS button. Both are fully customizable — just ask Claude to change the mappings in the source and rebuild. Want a different button for Ctrl+C? Different tmux bindings? Change it per profile.
 
 #### Always Active
 
@@ -98,7 +98,7 @@ Two profiles: **Default** and **Tmux**, toggled with the PS button. No magic aut
 | Cross (×) | Enter |
 | Circle (○) | Escape |
 | Triangle (△) | Tab |
-| D-pad | Arrow keys (auto-repeat) |
+| D-pad | Arrow keys |
 | Right stick | Scroll (vertical + horizontal) |
 | PS | Toggle profile (Default ↔ Tmux) |
 | Mute | Toggle system microphone |
