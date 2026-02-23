@@ -20,7 +20,7 @@
 
 ```bash
 # 1. Download DS4CC-Setup.exe from Releases and install it
-#    https://github.com/VeigaPunk/GamePadCCv2/releases
+#    https://github.com/VeigaPunk/DS4CC/releases
 
 # 2. Install the Claude Code hook (WSL or Git Bash):
 mkdir -p ~/.claude/hooks && cp hooks/ds4cc-state.sh ~/.claude/hooks/ && chmod +x ~/.claude/hooks/ds4cc-state.sh
@@ -67,7 +67,7 @@ The lightbar turns blue when the agent works, green when it's done.
 
 ### Installer (recommended)
 
-Download **DS4CC-Setup.exe** from [Releases](https://github.com/VeigaPunk/GamePadCCv2/releases) and run it.
+Download **DS4CC-Setup.exe** from [Releases](https://github.com/VeigaPunk/DS4CC/releases) and run it.
 
 - Installs to `%LOCALAPPDATA%\DS4CC` — no admin rights needed
 - Auto-start is **off by default** (opt-in checkbox)
@@ -227,8 +227,8 @@ Environment variables for the hook script:
 ## Build from Source
 
 ```bash
-git clone https://github.com/VeigaPunk/GamePadCCv2.git
-cd GamePadCCv2
+git clone https://github.com/VeigaPunk/DS4CC.git
+cd DS4CC
 cargo build --release
 ```
 

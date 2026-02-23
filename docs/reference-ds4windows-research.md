@@ -1,6 +1,6 @@
 # DS4Windows HID Format Research
 
-Reference notes from DS4Windows source code analysis, used to build GamePadCC v2.
+Reference notes from DS4Windows source code analysis, used to build DS4CC v2.
 
 ## Controller Identification
 
@@ -139,7 +139,7 @@ Both DualSense and DS4 Bluetooth reports use CRC-32 (polynomial 0xEDB88320):
 
 ## Key DS4Windows Patterns
 
-1. **HidHide**: DS4Windows uses HidHide kernel driver for exclusive access. GamePadCC avoids this dependency — users should disable Steam Input instead.
+1. **HidHide**: DS4Windows uses HidHide kernel driver for exclusive access. DS4CC avoids this dependency — users should disable Steam Input instead.
 2. **Report size matching**: Output report size MUST match the HID descriptor's OutputReportByteLength exactly, or Windows returns ERROR_INVALID_PARAMETER.
 3. **Non-blocking reads**: Use short timeouts (5ms) to avoid blocking the event loop.
 4. **Write errors are non-fatal**: The controller may occasionally reject writes; log and continue.

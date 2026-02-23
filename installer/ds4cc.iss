@@ -7,7 +7,7 @@
 #define MyAppName      "DS4CC"
 #define MyAppVersion   "2.0"
 #define MyAppPublisher "VeigaPunk"
-#define MyAppURL       "https://github.com/VeigaPunk/GamePadCCv2"
+#define MyAppURL       "https://github.com/VeigaPunk/DS4CC"
 #define MyAppExe       "ds4cc.exe"
 #define WisprURL       "https://wisprflow.ai"
 
