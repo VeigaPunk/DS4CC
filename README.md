@@ -317,19 +317,6 @@ Environment variables for the hook script:
 
 ---
 
-## What This Is Not
-
-It is not:
-
-- A plugin ecosystem
-- A distributed system
-- A GUI-heavy app
-- A hot-reloading dynamic bus architecture
-
-It is a controller-aware daemon with AI hooks.
-
----
-
 ## Technical Notes
 
 - Written in Rust (2024 edition)
