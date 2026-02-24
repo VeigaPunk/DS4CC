@@ -27,6 +27,7 @@ Make invisible processes tactile. Make AI state observable. Reduce keyboard fric
 DS4CC is a small Rust program that runs in the background and lets your PlayStation controller:
 
 - **Control tmux** — switch panes, split windows, navigate sessions
+- **Move the mouse cursor** — touchpad swipe or left stick, switchable from the tray
 - **React to Claude Code / Codex activity** — lightbar changes when the AI is thinking
 - **Give you rumble + lightbar feedback** when things happen
 - **Act like a programmable dev companion** — buttons map to real keystrokes
@@ -75,7 +76,7 @@ Here's the real flow, no buzzwords:
 
 Press buttons → things happen. D-pad sends arrow keys. Right stick scrolls. Face buttons map to Enter, Escape, Tab.
 
-Two profiles: **Default** and **Tmux**, toggled with the PS button. Both are fully customizable — just ask Claude to change the mappings in the source and rebuild. Want a different button for Ctrl+C? Different tmux bindings? Change it per profile.
+Three profiles: **Default**, **Tmux**, and **OpenCode**, cycled with the PS button. All are fully customizable — just ask Claude to change the mappings in the source and rebuild. Want a different button for Ctrl+C? Different tmux bindings? Change it per profile.
 
 #### Always Active
 
@@ -85,10 +86,15 @@ Two profiles: **Default** and **Tmux**, toggled with the PS button. Both are ful
 | Circle (○) | Escape |
 | Triangle (△) | Tab |
 | D-pad | Arrow keys |
-| Right stick | Scroll (vertical — replaces mouse scroll wheel) |
+| Right stick | Scroll (vertical + horizontal) |
+| Touchpad touch | Move mouse cursor (touchpad mode) |
+| Touchpad press | Left mouse click (always active) |
+| Left stick | Move mouse cursor (stick mode) |
 | L2 | Wispr speech-to-text (hold to dictate) |
-| PS | Toggle profile (Default ↔ Tmux) |
+| PS | Cycle profile (Default → Tmux → OpenCode) |
 | Mute | Toggle system microphone |
+
+Mouse movement mode is toggled from the tray icon: **Mouse: Left Stick** switches between touchpad swipe and left analog stick for cursor control. Touchpad click is always active regardless of mode.
 
 #### Default Profile
 
@@ -113,6 +119,18 @@ Two profiles: **Default** and **Tmux**, toggled with the PS button. Both are ful
 | R3 | Ctrl+P |
 
 Tmux bindings are auto-detected from the running tmux server via WSL. Falls back to standard defaults if detection fails. Override in config if needed.
+
+#### OpenCode Profile
+
+| Button | Action |
+|---|---|
+| Square (□) | OpenCode: new session |
+| L1 | OpenCode: previous session |
+| R1 | OpenCode: next session |
+| L3 | Ctrl+T |
+| R3 | Ctrl+P |
+
+OpenCode keybinds are auto-detected from `~/.config/opencode/opencode.json` via WSL. Install the DS4CC plugin with `bash install-hooks.sh` for agent state feedback.
 
 ### 🎙️ Controller + Wispr = No Keyboard
 
@@ -173,7 +191,17 @@ This prevents zombie states.
 
 ### 🖥️ Tray Icon
 
-PS button switches profile (shortcut mappings). System tray icon shows current profile. Right-click to start Wispr, enable auto-start-up, restart or exit app. Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
+PS button cycles profile (shortcut mappings). System tray icon shows current profile. Right-click for options:
+
+| Menu item | What it does |
+|---|---|
+| Open Wispr Flow | Launch Wispr Flow (prompts to download if not found) |
+| Restart | Restart DS4CC |
+| Enable auto start-up | Toggle Windows startup entry |
+| Mouse: Left Stick | Switch mouse cursor control between touchpad and left stick |
+| Exit | Quit |
+
+Tooltip shows `DS4CC — Default`, `DS4CC — Tmux`, or `DS4CC — OpenCode`.
 
 ---
 
@@ -264,6 +292,15 @@ dead_zone = 20
 sensitivity = 1.0
 horizontal = true
 
+[touchpad]
+enabled = true
+sensitivity = 1.5     # cursor speed multiplier for touchpad swipe
+
+[stick_mouse]
+enabled = true
+sensitivity = 8.0     # max pixels/frame at full deflection
+dead_zone = 15
+
 [tmux]
 enabled = true
 auto_detect = true
@@ -334,7 +371,7 @@ config.rs          TOML config with serde defaults
 controller.rs      VID/PID detection, controller type enums
 hid.rs             HID device discovery, open, read/write
 input.rs           Raw HID report parsing → UnifiedInput
-mapper.rs          Button mapping, profiles, d-pad repeat, right-stick scroll
+mapper.rs          Button mapping, profiles, d-pad repeat, scroll, touchpad/stick mouse
 output.rs          HID output reports (lightbar + rumble + player LEDs + mic LED)
 lightbar.rs        State → RGB color with pulse animation
 rumble.rs          Haptic patterns for state transitions

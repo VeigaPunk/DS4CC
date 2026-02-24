@@ -21,7 +21,7 @@ use crate::state::AgentState;
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Instant;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{sleep, Duration};
@@ -68,8 +68,12 @@ async fn main() {
         });
     }
 
+    // Shared mouse mode toggle: false = touchpad, true = left stick.
+    // Owned here; cloned into tray thread and each input loop iteration.
+    let mouse_stick_active = Arc::new(AtomicBool::new(false));
+
     // Tray icon
-    let tray_tx = tray::spawn(mapper::Profile::Default);
+    let tray_tx = tray::spawn(mapper::Profile::Default, Arc::clone(&mouse_stick_active));
 
     // Initialize HID
     let mut api = match hidapi::HidApi::new() {
@@ -153,7 +157,7 @@ async fn main() {
         });
 
         // Run input loop — returns when device disconnects
-        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.tmux, tmux_detected.as_ref(), &cfg.opencode, opencode_detected.as_ref(), &tray_tx, Arc::clone(&player_leds)).await;
+        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.stick_mouse, &cfg.touchpad, &cfg.tmux, tmux_detected.as_ref(), &cfg.opencode, opencode_detected.as_ref(), &tray_tx, Arc::clone(&player_leds), Arc::clone(&mouse_stick_active)).await;
 
         // Device disconnected — cancel output task and reconnect
         output_task.abort();
@@ -169,19 +173,25 @@ async fn run_input_loop(
     ct: controller::ControllerType,
     conn: controller::ConnectionType,
     scroll_cfg: &config::ScrollConfig,
+    stick_mouse_cfg: &config::StickMouseConfig,
+    touchpad_cfg: &config::TouchpadConfig,
     tmux_cfg: &config::TmuxConfig,
     tmux_detected: Option<&tmux_detect::TmuxDetected>,
     opencode_cfg: &config::OpenCodeConfig,
     opencode_detected: Option<&opencode_detect::OpenCodeDetected>,
     tray_tx: &std::sync::mpsc::Sender<tray::TrayCmd>,
     player_leds: Arc<AtomicU8>,
+    mouse_stick_active: Arc<AtomicBool>,
 ) {
     let mut mapper_state = mapper::MapperState::new(
         scroll_cfg,
+        stick_mouse_cfg,
+        touchpad_cfg,
         tmux_cfg,
         tmux_detected,
         opencode_cfg,
         opencode_detected,
+        mouse_stick_active,
     );
     let mut buf = [0u8; 128];
     let mut consecutive_errors = 0u32;
