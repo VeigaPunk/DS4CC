@@ -5,6 +5,7 @@
 ///   Cross    → Enter
 ///   Circle   → Escape
 ///   Triangle → Tab
+///   Left stick  → Mouse cursor (velocity-based, configurable sensitivity)
 ///   Right stick → Mouse scroll wheel (vertical + horizontal)
 ///   PS       → Cycle profiles (Default ↔ Tmux)
 ///
@@ -28,16 +29,19 @@
 ///
 /// Combos are sent atomically in a single SendInput call.
 
-use crate::config::{OpenCodeConfig, ScrollConfig, TmuxConfig};
+use crate::config::{OpenCodeConfig, ScrollConfig, StickMouseConfig, TouchpadConfig, TmuxConfig};
 use crate::input::{ButtonState, DPad, UnifiedInput};
 use crate::opencode_detect::{ActionBinding, OpenCodeDetected};
 use crate::tmux_detect::TmuxDetected;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Instant;
 
 #[cfg(windows)]
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT, MOUSEINPUT,
-    KEYEVENTF_KEYUP, MOUSEEVENTF_WHEEL, MOUSEEVENTF_HWHEEL,
+    KEYEVENTF_KEYUP,
+    MOUSEEVENTF_WHEEL, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_MOVE,
+    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
     VK_RETURN, VK_ESCAPE, VK_TAB, VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT,
     VK_MENU, VK_SHIFT, VK_CONTROL,
 };
@@ -214,6 +218,10 @@ pub enum Action {
     KeySequence(Vec<Vec<VKey>>),
     /// Mouse scroll event. Values in wheel-delta units (positive = up/right).
     Scroll { horizontal: i32, vertical: i32 },
+    /// Relative mouse cursor movement (screen pixels). Emitted by touchpad touch.
+    MouseMove { dx: i32, dy: i32 },
+    /// Left mouse button click (press + release). Emitted by touchpad physical click.
+    MouseClick,
     /// Custom action identifier (e.g., "new_session").
     Custom(String),
 }
@@ -533,6 +541,20 @@ pub struct MapperState {
     scroll_dead_zone: i16,
     scroll_sensitivity: f32,
     scroll_horizontal: bool,
+    // Left stick as mouse cursor state
+    stick_mouse_enabled: bool,
+    stick_mouse_sensitivity: f32,
+    stick_mouse_dead_zone: i16,
+    stick_acc_x: f32,
+    stick_acc_y: f32,
+    // Mouse mode toggle: shared with tray thread.
+    // false = touchpad touch moves cursor; true = left stick moves cursor.
+    // Touchpad click (press) fires regardless of mode.
+    mouse_stick_active: Arc<AtomicBool>,
+    // Touchpad-as-mouse state
+    prev_touch: Option<(u16, u16)>,
+    touchpad_enabled: bool,
+    touchpad_sensitivity: f32,
     // Profile system
     active_profile: Profile,
     tmux_available: bool, // false = only Default profile, PS does nothing
@@ -552,6 +574,15 @@ impl Default for MapperState {
             scroll_dead_zone: 20,
             scroll_sensitivity: 1.0,
             scroll_horizontal: true,
+            stick_mouse_enabled: true,
+            stick_mouse_sensitivity: 8.0,
+            stick_mouse_dead_zone: 15,
+            stick_acc_x: 0.0,
+            stick_acc_y: 0.0,
+            mouse_stick_active: Arc::new(AtomicBool::new(false)),
+            prev_touch: None,
+            touchpad_enabled: true,
+            touchpad_sensitivity: 1.5,
             active_profile: Profile::Default,
             tmux_available: true,
             tmux: TmuxState::default(),
@@ -565,15 +596,24 @@ impl MapperState {
     /// Detected configurations are used to resolve action-name → key bindings.
     pub fn new(
         scroll: &ScrollConfig,
+        stick_mouse: &StickMouseConfig,
+        touchpad: &TouchpadConfig,
         tmux: &TmuxConfig,
         tmux_detected: Option<&TmuxDetected>,
         opencode: &OpenCodeConfig,
         opencode_detected: Option<&OpenCodeDetected>,
+        mouse_stick_active: Arc<AtomicBool>,
     ) -> Self {
         Self {
             scroll_dead_zone: scroll.dead_zone as i16,
             scroll_sensitivity: scroll.sensitivity,
             scroll_horizontal: scroll.horizontal,
+            stick_mouse_enabled: stick_mouse.enabled,
+            stick_mouse_sensitivity: stick_mouse.sensitivity,
+            stick_mouse_dead_zone: stick_mouse.dead_zone as i16,
+            mouse_stick_active,
+            touchpad_enabled: touchpad.enabled,
+            touchpad_sensitivity: touchpad.sensitivity,
             active_profile: Profile::Default,
             tmux_available: tmux.enabled,
             tmux: TmuxState::from_config(tmux, tmux_detected),
@@ -601,6 +641,12 @@ impl MapperState {
                 }
             };
         }
+
+        // --- Touchpad: touch → cursor movement, click → left mouse button (always active) ---
+        self.process_touchpad(input, &mut actions);
+
+        // --- Left stick → mouse cursor (always active) ---
+        self.process_stick_mouse(input, &mut actions);
 
         // --- Always active face buttons ---
         on_press!(cross, Action::KeyCombo(vec![VKey::Return]));
@@ -673,7 +719,7 @@ impl MapperState {
                 on_press!(r3, Action::KeyCombo(vec![VKey::Control, VKey::P]));
                 on_press_tmux!(share, share);
                 on_press_tmux!(options, options);
-                on_press_tmux!(touchpad, touchpad);
+                // Note: touchpad button is handled globally by process_touchpad() above.
             }
 
         }
@@ -767,6 +813,89 @@ impl MapperState {
             self.last_scroll_at = Some(now);
         }
     }
+
+    /// Translate touchpad touch coordinates into relative mouse movement and
+    /// touchpad click into a left mouse button click.
+    ///
+    /// Called on every frame BEFORE profile-dependent dispatch so that the
+    /// touchpad works identically in both Default and Tmux profiles.
+    fn process_touchpad(&mut self, input: &UnifiedInput, actions: &mut Vec<Action>) {
+        if !self.touchpad_enabled {
+            return; // config-level disable: suppresses both movement and click
+        }
+
+        // ── Touch movement: only in touchpad mode (not when left stick drives cursor) ──
+        let stick_active = self.mouse_stick_active.load(Ordering::Relaxed);
+        let tp = &input.touchpad[0];
+        if tp.active && !stick_active {
+            if let Some((px, py)) = self.prev_touch {
+                let raw_dx = tp.x as i32 - px as i32;
+                let raw_dy = tp.y as i32 - py as i32;
+                let dx = (raw_dx as f32 * self.touchpad_sensitivity) as i32;
+                let dy = (raw_dy as f32 * self.touchpad_sensitivity) as i32;
+                if dx != 0 || dy != 0 {
+                    log::debug!("TouchpadMove raw=({raw_dx},{raw_dy}) scaled=({dx},{dy})");
+                    actions.push(Action::MouseMove { dx, dy });
+                }
+            }
+            self.prev_touch = Some((tp.x, tp.y));
+        } else {
+            // Clear prev_touch so switching back to touchpad mode doesn't
+            // produce a spurious large jump.
+            self.prev_touch = None;
+        }
+
+        // ── Touchpad press → left click (always active regardless of mouse mode) ──
+        if input.buttons.touchpad && !self.prev.touchpad {
+            log::debug!("TouchpadClick → MouseClick");
+            actions.push(Action::MouseClick);
+        }
+    }
+
+    /// Translate left analog stick deflection into relative mouse movement.
+    ///
+    /// Velocity-based: stick position → cursor speed per frame.
+    /// A sub-pixel accumulator (`stick_acc_x/y`) carries fractional pixels
+    /// across frames so slow, precise movements don't stutter.
+    fn process_stick_mouse(&mut self, input: &UnifiedInput, actions: &mut Vec<Action>) {
+        if !self.stick_mouse_enabled || !self.mouse_stick_active.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let (lx, ly) = input.left_stick;
+        let dx_raw = lx as i16 - 128;
+        let dy_raw = ly as i16 - 128;
+
+        // Apply dead zone per axis
+        let dx_raw = if dx_raw.abs() < self.stick_mouse_dead_zone { 0 } else { dx_raw };
+        let dy_raw = if dy_raw.abs() < self.stick_mouse_dead_zone { 0 } else { dy_raw };
+
+        if dx_raw == 0 && dy_raw == 0 {
+            // Reset accumulators when stick returns to center so no phantom move
+            // fires when the stick is next pushed.
+            self.stick_acc_x = 0.0;
+            self.stick_acc_y = 0.0;
+            return;
+        }
+
+        // Normalize to -1.0..1.0 and scale by sensitivity (pixels/frame at full deflection)
+        let vx = (dx_raw as f32 / 127.0).clamp(-1.0, 1.0) * self.stick_mouse_sensitivity;
+        let vy = (dy_raw as f32 / 127.0).clamp(-1.0, 1.0) * self.stick_mouse_sensitivity;
+
+        // Accumulate; extract whole pixels; keep remainder for next frame
+        self.stick_acc_x += vx;
+        self.stick_acc_y += vy;
+
+        let dx = self.stick_acc_x as i32;
+        let dy = self.stick_acc_y as i32;
+
+        if dx != 0 || dy != 0 {
+            self.stick_acc_x -= dx as f32;
+            self.stick_acc_y -= dy as f32;
+            log::debug!("StickMouse move=({dx},{dy}) acc=({:.2},{:.2})", self.stick_acc_x, self.stick_acc_y);
+            actions.push(Action::MouseMove { dx, dy });
+        }
+    }
 }
 
 // ── Windows SendInput functions ──────────────────────────────────────
@@ -842,6 +971,31 @@ pub fn send_key_sequence(combos: &[Vec<VKey>], delay_ms: u64) {
     }
 }
 
+/// Move the mouse cursor by a relative offset via Windows SendInput.
+#[cfg(windows)]
+pub fn send_mouse_move(dx: i32, dy: i32) {
+    let input = make_mouse_move_input(dx, dy);
+    unsafe {
+        SendInput(1, &input, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
+/// Send a left mouse button click (down + up) via Windows SendInput.
+#[cfg(windows)]
+pub fn send_mouse_click() {
+    let inputs = [
+        make_mouse_flag_input(MOUSEEVENTF_LEFTDOWN),
+        make_mouse_flag_input(MOUSEEVENTF_LEFTUP),
+    ];
+    unsafe {
+        SendInput(
+            inputs.len() as u32,
+            inputs.as_ptr(),
+            std::mem::size_of::<INPUT>() as i32,
+        );
+    }
+}
+
 /// Send a mouse scroll event via Windows SendInput.
 #[cfg(windows)]
 pub fn send_scroll(horizontal: i32, vertical: i32) {
@@ -898,7 +1052,43 @@ fn make_mouse_input(flags: u32, wheel_delta: i32) -> INPUT {
     }
 }
 
-/// Execute an action (send keystrokes, scroll, or handle custom actions).
+/// Build a relative mouse-move INPUT struct.
+#[cfg(windows)]
+fn make_mouse_move_input(dx: i32, dy: i32) -> INPUT {
+    INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+            mi: MOUSEINPUT {
+                dx,
+                dy,
+                mouseData: 0,
+                dwFlags: MOUSEEVENTF_MOVE,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+/// Build a mouse button INPUT struct (no dx/dy, no wheel data).
+#[cfg(windows)]
+fn make_mouse_flag_input(flags: u32) -> INPUT {
+    INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_0 {
+            mi: MOUSEINPUT {
+                dx: 0,
+                dy: 0,
+                mouseData: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    }
+}
+
+/// Execute an action (send keystrokes, scroll, mouse movement/click, or handle custom actions).
 #[cfg(windows)]
 pub fn execute_action(action: &Action) {
     match action {
@@ -907,6 +1097,8 @@ pub fn execute_action(action: &Action) {
         Action::KeyUp(keys) => send_key_up(keys),
         Action::KeySequence(combos) => send_key_sequence(combos, 10),
         Action::Scroll { horizontal, vertical } => send_scroll(*horizontal, *vertical),
+        Action::MouseMove { dx, dy } => send_mouse_move(*dx, *dy),
+        Action::MouseClick => send_mouse_click(),
         Action::Custom(name) => {
             log::info!("Custom action triggered: {name}");
         }
@@ -1133,7 +1325,7 @@ mod tests {
         let scroll_cfg = ScrollConfig::default();
         let mut tmux_cfg = TmuxConfig::default();
         tmux_cfg.enabled = false;
-        let mut mapper = MapperState::new(&scroll_cfg, &tmux_cfg, None, &crate::config::OpenCodeConfig::default(), None);
+        let mut mapper = MapperState::new(&scroll_cfg, &crate::config::StickMouseConfig::default(), &crate::config::TouchpadConfig::default(), &tmux_cfg, None, &crate::config::OpenCodeConfig::default(), None, Arc::new(AtomicBool::new(false)));
 
         // PS press should not switch profiles
         let ps_press = input_with(|i| i.buttons.ps = true);
@@ -1295,6 +1487,239 @@ mod tests {
     fn parse_single_key() {
         let combo = parse_key_combo("p").unwrap();
         assert_eq!(combo, vec![VKey::P]);
+    }
+
+    // ── Touchpad tests ────────────────────────────────────────────────
+
+    fn input_with_touch(x: u16, y: u16, click: bool) -> UnifiedInput {
+        let mut i = UnifiedInput::default();
+        i.touchpad[0] = crate::input::TouchPoint { active: true, x, y };
+        i.buttons.touchpad = click;
+        i
+    }
+
+    #[test]
+    fn touchpad_first_frame_no_move() {
+        let mut mapper = MapperState::default();
+        // First frame of active touch: no prev → no MouseMove emitted
+        let input = input_with_touch(500, 300, false);
+        let actions = mapper.update(&input);
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::MouseMove { .. })),
+            "No MouseMove on first touch frame"
+        );
+    }
+
+    #[test]
+    fn touchpad_second_frame_emits_move() {
+        let mut mapper = MapperState::default();
+        mapper.update(&input_with_touch(500, 300, false));
+        // Second frame: moved right 10, down 5
+        let actions = mapper.update(&input_with_touch(510, 305, false));
+        let moves: Vec<_> = actions.iter()
+            .filter_map(|a| match a { Action::MouseMove { dx, dy } => Some((*dx, *dy)), _ => None })
+            .collect();
+        assert_eq!(moves.len(), 1, "Expected one MouseMove");
+        // With default sensitivity 1.5: dx=(10*1.5)=15, dy=(5*1.5)=7
+        assert_eq!(moves[0], (15, 7));
+    }
+
+    #[test]
+    fn touchpad_lift_clears_prev() {
+        let mut mapper = MapperState::default();
+        mapper.update(&input_with_touch(500, 300, false));
+        mapper.update(&input_with_touch(510, 305, false));
+        // Lift
+        mapper.update(&UnifiedInput::default());
+        assert!(mapper.prev_touch.is_none(), "prev_touch cleared after lift");
+        // Re-touch at a new position: should NOT emit move (no prev)
+        let actions = mapper.update(&input_with_touch(900, 600, false));
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::MouseMove { .. })),
+            "No move on re-touch after lift"
+        );
+    }
+
+    #[test]
+    fn touchpad_no_move_when_stationary() {
+        let mut mapper = MapperState::default();
+        mapper.update(&input_with_touch(500, 300, false));
+        // Same position: raw delta = 0,0 → scaled = 0,0 → no action
+        let actions = mapper.update(&input_with_touch(500, 300, false));
+        assert!(!actions.iter().any(|a| matches!(a, Action::MouseMove { .. })));
+    }
+
+    #[test]
+    fn touchpad_click_rising_edge() {
+        let mut mapper = MapperState::default();
+        let input = input_with_touch(500, 300, true);
+        let actions = mapper.update(&input);
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::MouseClick)),
+            "MouseClick on first press frame"
+        );
+        // Hold: no second click
+        let actions = mapper.update(&input);
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::MouseClick)),
+            "No click on hold"
+        );
+    }
+
+    #[test]
+    fn touchpad_disabled_no_actions() {
+        let mut mapper = MapperState::default();
+        mapper.touchpad_enabled = false;
+        let input = input_with_touch(500, 300, true);
+        mapper.update(&input_with_touch(400, 200, false)); // set prev_touch (should be skipped)
+        let actions = mapper.update(&input);
+        assert!(!actions.iter().any(|a| matches!(a, Action::MouseMove { .. })));
+        assert!(!actions.iter().any(|a| matches!(a, Action::MouseClick)));
+    }
+
+    // ── Left stick mouse tests ────────────────────────────────────────
+
+    fn input_with_left_stick(lx: u8, ly: u8) -> UnifiedInput {
+        let mut i = UnifiedInput::default();
+        i.left_stick = (lx, ly);
+        i
+    }
+
+    #[test]
+    fn stick_mouse_center_no_action() {
+        let mut mapper = MapperState::default();
+        // Centered stick → no MouseMove
+        let actions = mapper.update(&input_with_left_stick(128, 128));
+        assert!(!actions.iter().any(|a| matches!(a, Action::MouseMove { .. })));
+    }
+
+    #[test]
+    fn stick_mouse_dead_zone_no_action() {
+        let mut mapper = MapperState::default();
+        // Deflection of 10 < dead_zone (15) → no move
+        let actions = mapper.update(&input_with_left_stick(138, 118));
+        assert!(!actions.iter().any(|a| matches!(a, Action::MouseMove { .. })));
+    }
+
+    /// Helper: activate stick mouse mode for tests.
+    fn enable_stick_mode(mapper: &MapperState) {
+        mapper.mouse_stick_active.store(true, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn stick_mouse_beyond_dead_zone_emits_move() {
+        let mut mapper = MapperState::default();
+        enable_stick_mode(&mapper);
+        // Full right deflection (lx=255, dy_raw=127 > dead_zone=15)
+        let actions = mapper.update(&input_with_left_stick(255, 128));
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::MouseMove { dx, .. } if *dx > 0)),
+            "Full right deflection should produce positive dx"
+        );
+    }
+
+    #[test]
+    fn stick_mouse_direction_up_negative_dy() {
+        let mut mapper = MapperState::default();
+        enable_stick_mode(&mapper);
+        // Full up deflection (ly=0, dy_raw=-128 < 0)
+        let actions = mapper.update(&input_with_left_stick(128, 0));
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::MouseMove { dy, .. } if *dy < 0)),
+            "Full up deflection should produce negative dy"
+        );
+    }
+
+    #[test]
+    fn stick_mouse_accumulates_subpixel() {
+        // sensitivity=0.3, dx_raw=64 → vx≈0.151 px/frame → needs ~7 frames to cross 1px
+        let mut mapper = MapperState::default();
+        enable_stick_mode(&mapper);
+        mapper.stick_mouse_sensitivity = 0.3;
+        mapper.stick_mouse_dead_zone = 0;
+
+        let input = input_with_left_stick(192, 128); // dx_raw=64
+        let fired = (0..10).any(|_| {
+            mapper.update(&input).iter().any(|a| matches!(a, Action::MouseMove { dx, .. } if *dx > 0))
+        });
+        assert!(fired, "Sub-pixel accumulator should emit move after enough frames");
+    }
+
+    #[test]
+    fn stick_mouse_acc_resets_at_center() {
+        let mut mapper = MapperState::default();
+        enable_stick_mode(&mapper);
+        // Push right, then center
+        mapper.update(&input_with_left_stick(255, 128));
+        mapper.update(&UnifiedInput::default()); // center
+        assert_eq!(mapper.stick_acc_x, 0.0, "Accumulator should reset at center");
+        assert_eq!(mapper.stick_acc_y, 0.0);
+    }
+
+    #[test]
+    fn stick_mouse_disabled_no_actions() {
+        let mut mapper = MapperState::default();
+        // stick_mouse_enabled=false overrides even if stick mode is selected
+        mapper.stick_mouse_enabled = false;
+        enable_stick_mode(&mapper);
+        let actions = mapper.update(&input_with_left_stick(255, 0));
+        assert!(!actions.iter().any(|a| matches!(a, Action::MouseMove { .. })));
+    }
+
+    // ── Mouse mode switching tests ────────────────────────────────────
+
+    #[test]
+    fn stick_mode_off_suppresses_stick_move() {
+        let mut mapper = MapperState::default();
+        // Default: stick mode off → full stick deflection produces no MouseMove
+        let actions = mapper.update(&input_with_left_stick(255, 128));
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::MouseMove { .. })),
+            "Stick should not move cursor when stick mode is off"
+        );
+    }
+
+    #[test]
+    fn stick_mode_on_suppresses_touchpad_move() {
+        let mut mapper = MapperState::default();
+        enable_stick_mode(&mapper);
+        // Prime prev_touch as if we were in touchpad mode, then switch
+        mapper.prev_touch = Some((500, 300));
+        // Touchpad touch should NOT emit MouseMove when stick mode is active
+        let actions = mapper.update(&input_with_touch(510, 305, false));
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::MouseMove { .. })),
+            "Touchpad touch should not move cursor when stick mode is on"
+        );
+    }
+
+    #[test]
+    fn touchpad_click_always_fires_in_stick_mode() {
+        let mut mapper = MapperState::default();
+        enable_stick_mode(&mapper);
+        // Touchpad press → click must fire even in stick mode
+        let actions = mapper.update(&input_with_touch(500, 300, true));
+        assert!(
+            actions.iter().any(|a| matches!(a, Action::MouseClick)),
+            "Touchpad click must fire regardless of mouse mode"
+        );
+        // But no touch movement
+        assert!(
+            !actions.iter().any(|a| matches!(a, Action::MouseMove { .. })),
+            "No touch movement in stick mode"
+        );
+    }
+
+    #[test]
+    fn switching_modes_clears_prev_touch() {
+        let mut mapper = MapperState::default();
+        // Establish prev_touch in touchpad mode
+        mapper.update(&input_with_touch(500, 300, false));
+        assert!(mapper.prev_touch.is_some());
+        // Switch to stick mode — next frame clears prev_touch
+        enable_stick_mode(&mapper);
+        mapper.update(&input_with_touch(510, 305, false));
+        assert!(mapper.prev_touch.is_none(), "prev_touch must clear when mode switches to stick");
     }
 
     #[test]

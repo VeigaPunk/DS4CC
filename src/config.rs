@@ -10,6 +10,8 @@ pub struct Config {
     pub lightbar: LightbarConfig,
     pub buttons: ButtonConfig,
     pub scroll: ScrollConfig,
+    pub stick_mouse: StickMouseConfig,
+    pub touchpad: TouchpadConfig,
     pub tmux: TmuxConfig,
     pub codex: CodexConfig,
     pub opencode: OpenCodeConfig,
@@ -119,6 +121,48 @@ impl Default for TmuxConfig {
     }
 }
 
+/// Left stick as mouse cursor configuration.
+///
+/// When enabled, deflecting the left analog stick moves the mouse cursor.
+/// Speed is proportional to deflection; a sub-pixel accumulator ensures smooth
+/// movement even at low sensitivity values.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct StickMouseConfig {
+    /// Enable left stick cursor control.
+    pub enabled: bool,
+    /// Max pixels per input frame at full deflection. Default: 8.0.
+    pub sensitivity: f32,
+    /// Dead zone radius around center (0-127). Default: 15.
+    pub dead_zone: u8,
+}
+
+impl Default for StickMouseConfig {
+    fn default() -> Self {
+        Self { enabled: true, sensitivity: 8.0, dead_zone: 15 }
+    }
+}
+
+/// Touchpad-as-mouse configuration.
+///
+/// When enabled, sliding a finger on the DualSense touchpad moves the cursor,
+/// and pressing (clicking) the touchpad sends a left mouse button click.
+/// DS4 touchpad coordinates are not yet supported.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct TouchpadConfig {
+    /// Enable touchpad cursor control. Set false to use touchpad button in tmux/opencode mappings.
+    pub enabled: bool,
+    /// Cursor speed multiplier. 1.0 = raw touchpad units → pixels 1:1. Default 1.5.
+    pub sensitivity: f32,
+}
+
+impl Default for TouchpadConfig {
+    fn default() -> Self {
+        Self { enabled: true, sensitivity: 1.5 }
+    }
+}
+
 /// Codex JSONL poller configuration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
@@ -223,6 +267,8 @@ impl Default for Config {
             lightbar: LightbarConfig::default(),
             buttons: ButtonConfig::default(),
             scroll: ScrollConfig::default(),
+            stick_mouse: StickMouseConfig::default(),
+            touchpad: TouchpadConfig::default(),
             tmux: TmuxConfig::default(),
             codex: CodexConfig::default(),
             opencode: OpenCodeConfig::default(),

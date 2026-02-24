@@ -13,7 +13,7 @@
 
 use crate::mapper::Profile;
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc};
 
 use tray_icon::{Icon, TrayIconBuilder};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -32,17 +32,18 @@ pub enum TrayCmd {
 }
 
 /// Spawn the tray icon on a background thread. Returns a channel sender.
-pub fn spawn(initial: Profile) -> mpsc::Sender<TrayCmd> {
+pub fn spawn(initial: Profile, mouse_stick_active: Arc<AtomicBool>) -> mpsc::Sender<TrayCmd> {
     let (tx, rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("tray".into())
-        .spawn(move || run(rx, initial))
+        .spawn(move || run(rx, initial, mouse_stick_active))
         .expect("spawn tray thread");
     tx
 }
 
-fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile) {
+fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<AtomicBool>) {
     let auto_start_enabled = is_auto_start_enabled();
+    let stick_initially = mouse_stick_active.load(Ordering::Relaxed);
     let (r, g, b) = profile_color(initial);
     let icon = make_icon(r, g, b);
 
@@ -50,18 +51,21 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile) {
     let wispr_item    = MenuItem::new("Open Wispr Flow", true, None);
     let restart_item  = MenuItem::new("Restart", true, None);
     let startup_item  = CheckMenuItem::new("Enable auto start-up", true, auto_start_enabled, None);
+    let stick_item    = CheckMenuItem::new("Mouse: Left Stick", true, stick_initially, None);
     let exit_item     = MenuItem::new("Exit", true, None);
 
     // Capture IDs for event matching
     let wispr_id   = wispr_item.id().clone();
     let restart_id = restart_item.id().clone();
     let startup_id = startup_item.id().clone();
+    let stick_id   = stick_item.id().clone();
     let exit_id    = exit_item.id().clone();
 
     let menu = Menu::new();
     menu.append(&wispr_item).expect("menu append");
     menu.append(&restart_item).expect("menu append");
     menu.append(&startup_item).expect("menu append");
+    menu.append(&stick_item).expect("menu append");
     menu.append(&PredefinedMenuItem::separator()).expect("menu append");
     menu.append(&exit_item).expect("menu append");
 
@@ -101,6 +105,11 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile) {
             } else if event.id == startup_id {
                 // CheckMenuItem auto-toggles on click; is_checked() reflects new state
                 set_auto_start(startup_item.is_checked());
+            } else if event.id == stick_id {
+                let stick = stick_item.is_checked();
+                mouse_stick_active.store(stick, Ordering::Relaxed);
+                let mode = if stick { "left stick" } else { "touchpad" };
+                log::info!("Mouse cursor mode: {mode}");
             }
         }
 

@@ -30,6 +30,18 @@
 use crate::controller::{ConnectionType, ControllerType};
 use crate::crc32;
 
+/// A single capacitive touch contact on the DualSense touchpad.
+///
+/// Coordinates are in touchpad units:
+///   X: 0 (left) – 1919 (right)
+///   Y: 0 (top)  – 1079 (bottom)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TouchPoint {
+    pub active: bool,
+    pub x: u16,
+    pub y: u16,
+}
+
 /// D-pad direction decoded from the 4-bit hat field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DPad {
@@ -74,6 +86,8 @@ pub struct UnifiedInput {
     pub l2_analog: u8,
     pub r2_analog: u8,
     pub buttons: ButtonState,
+    /// Touchpad contacts (DualSense only; DS4 always returns [default; 2]).
+    pub touchpad: [TouchPoint; 2],
 }
 
 impl Default for UnifiedInput {
@@ -84,6 +98,7 @@ impl Default for UnifiedInput {
             l2_analog: 0,
             r2_analog: 0,
             buttons: ButtonState::default(),
+            touchpad: [TouchPoint::default(); 2],
         }
     }
 }
@@ -144,6 +159,44 @@ fn parse_buttons(b0: u8, b1: u8, b2: u8) -> ButtonState {
     }
 }
 
+/// Parse the two DualSense touchpad contact points starting at `data[off + 32]`.
+///
+/// HID layout (4 bytes per contact, from Linux `hid-playstation.c`):
+///   byte 0: contact byte — bit 7 = inactive (0 = active), bits 0–6 = finger ID
+///   byte 1: x_lo  — lower 8 bits of X (range 0–1919)
+///   byte 2: bits 0–3 = x_hi (upper 4 bits of X), bits 4–7 = y_lo (lower 4 bits of Y)
+///   byte 3: y_hi  — upper 8 bits of Y (range 0–1079)
+///
+/// X = x_lo | (x_hi << 8)
+/// Y = y_lo | (y_hi << 4)
+///
+/// Returns `[TouchPoint::default(); 2]` silently when the buffer is too short.
+fn parse_touch_points(data: &[u8], off: usize) -> [TouchPoint; 2] {
+    // Need off+32 .. off+39 inclusive (8 bytes for 2 contacts)
+    if data.len() < off + 40 {
+        return [TouchPoint::default(); 2];
+    }
+
+    let decode = |base: usize| -> TouchPoint {
+        let contact  = data[base];
+        let x_lo     = data[base + 1] as u16;
+        let mid      = data[base + 2];
+        let y_hi     = data[base + 3] as u16;
+
+        let active = (contact & 0x80) == 0;
+        let x = x_lo | (((mid & 0x0F) as u16) << 8);
+        let y = ((mid >> 4) as u16) | (y_hi << 4);
+
+        if active {
+            log::debug!("Touchpad contact@{base}: active x={x} y={y}");
+        }
+
+        TouchPoint { active, x, y }
+    };
+
+    [decode(off + 32), decode(off + 36)]
+}
+
 /// Parse a DualSense USB input report.
 /// Expected: report ID 0x01 already stripped by hidapi on Windows, so `data` starts at byte 0 = LX.
 /// Total read length from hidapi: 64 bytes.
@@ -163,6 +216,7 @@ fn parse_dualsense_usb(data: &[u8]) -> Result<UnifiedInput, ParseError> {
         // off+7 = buttons[0], off+8 = buttons[1], off+9 = buttons[2]
         // (off+6 is a counter)
         buttons: parse_buttons(data[off + 7], data[off + 8], data[off + 9]),
+        touchpad: parse_touch_points(data, off),
     })
 }
 
@@ -182,6 +236,7 @@ fn parse_dualsense_bt(data: &[u8]) -> Result<UnifiedInput, ParseError> {
         l2_analog: data[off + 4],
         r2_analog: data[off + 5],
         buttons: parse_buttons(data[off + 7], data[off + 8], data[off + 9]),
+        touchpad: parse_touch_points(data, off),
     })
 }
 
@@ -201,6 +256,8 @@ fn parse_ds4_usb(data: &[u8]) -> Result<UnifiedInput, ParseError> {
         buttons: parse_buttons(data[off + 4], data[off + 5], data[off + 6]),
         l2_analog: data[off + 7],
         r2_analog: data[off + 8],
+        // DS4 touchpad has a different layout — not yet implemented.
+        touchpad: [TouchPoint::default(); 2],
     })
 }
 
@@ -220,6 +277,8 @@ fn parse_ds4_bt(data: &[u8]) -> Result<UnifiedInput, ParseError> {
         buttons: parse_buttons(data[off + 4], data[off + 5], data[off + 6]),
         l2_analog: data[off + 7],
         r2_analog: data[off + 8],
+        // DS4 touchpad has a different layout — not yet implemented.
+        touchpad: [TouchPoint::default(); 2],
     })
 }
 
@@ -277,6 +336,84 @@ mod tests {
         assert!(input.buttons.cross);
         assert!(!input.buttons.circle);
         assert_eq!(input.buttons.dpad, DPad::Neutral);
+    }
+
+    // ── TouchPoint parsing tests ─────────────────────────────────────────
+
+    /// Build a 64-byte DualSense USB report (no report-ID prefix)
+    /// with the given touch bytes at off=0.
+    fn make_ds_usb_with_touch(contact: u8, x: u16, y: u16) -> [u8; 64] {
+        let mut data = [0u8; 64];
+        // Minimal valid button bytes
+        data[7] = 0x08; // hat=neutral (8)
+        // Encode touch point 0 at off+32 = byte 32
+        data[32] = contact;
+        data[33] = (x & 0xFF) as u8;
+        data[34] = ((x >> 8) & 0x0F) as u8 | (((y & 0x0F) as u8) << 4);
+        data[35] = ((y >> 4) & 0xFF) as u8;
+        // Touch point 1: set bit7=1 (inactive) explicitly
+        data[36] = 0x80;
+        data
+    }
+
+    #[test]
+    fn touch_point_active() {
+        // contact byte with bit7=0 → active
+        let data = make_ds_usb_with_touch(0x00, 100, 200);
+        let pts = parse_touch_points(&data, 0);
+        assert!(pts[0].active, "bit7=0 should be active");
+        assert_eq!(pts[0].x, 100);
+        assert_eq!(pts[0].y, 200);
+        assert!(!pts[1].active, "second point not set");
+    }
+
+    #[test]
+    fn touch_point_inactive() {
+        // contact byte with bit7=1 → inactive
+        let data = make_ds_usb_with_touch(0x80, 500, 300);
+        let pts = parse_touch_points(&data, 0);
+        assert!(!pts[0].active, "bit7=1 should be inactive");
+    }
+
+    #[test]
+    fn touch_point_x_max() {
+        // X = 1919 = 0x77F → x_lo = 0x7F, x_hi = 0x7
+        let data = make_ds_usb_with_touch(0x00, 1919, 0);
+        let pts = parse_touch_points(&data, 0);
+        assert_eq!(pts[0].x, 1919);
+        assert_eq!(pts[0].y, 0);
+    }
+
+    #[test]
+    fn touch_point_y_max() {
+        // Y = 1079 = 0x437 → y_lo = 7, y_hi = 0x43
+        let data = make_ds_usb_with_touch(0x00, 0, 1079);
+        let pts = parse_touch_points(&data, 0);
+        assert_eq!(pts[0].y, 1079);
+        assert_eq!(pts[0].x, 0);
+    }
+
+    #[test]
+    fn touch_points_short_buffer_returns_default() {
+        // Buffer smaller than off+40
+        let data = [0u8; 35];
+        let pts = parse_touch_points(&data, 0);
+        assert!(!pts[0].active);
+        assert!(!pts[1].active);
+    }
+
+    #[test]
+    fn parse_dualsense_usb_has_touch_field() {
+        // Verify UnifiedInput correctly exposes touch from a USB report
+        let mut data = [0u8; 64];
+        data[7] = 0x08; // hat neutral
+        data[32] = 0x01; // contact active (id=1, bit7=0)
+        data[33] = 50;   // x_lo
+        data[34] = 0x03; // x_hi=3, y_lo=0
+        data[35] = 0;    // y_hi
+        let input = parse_dualsense_usb(&data).unwrap();
+        assert!(input.touchpad[0].active);
+        assert_eq!(input.touchpad[0].x, 50 | (3 << 8)); // = 818
     }
 
     #[test]
