@@ -39,7 +39,7 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 
 ```bash
 # 1. Download DS4CC-Setup.exe from Releases and install it
-# https://github.com/VeigaPunk/DS4CC/releases/latest
+ https://github.com/VeigaPunk/DS4CC/releases/latest
 ```
 
 Plug in your DualSense. Launch DS4CC.
