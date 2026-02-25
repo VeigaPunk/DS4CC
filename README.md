@@ -18,7 +18,7 @@
 
 Turn a controller into a programmable command interface for developers.
 
-Make invisible processes tactile. Make agent states observable, multi-instance, system-wide. Reduce keyboard friction. Keep the system simple.
+Make invisible processes tactile. Make agent states observable, system-wide. Reduce keyboard friction. Keep the system simple.
 
 ---
 
