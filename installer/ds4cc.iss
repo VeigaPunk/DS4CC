@@ -29,7 +29,7 @@ PrivilegesRequiredOverridesAllowed=commandline
 ; Output
 OutputDir=output
 OutputBaseFilename=DS4CC-Setup
-SetupIconFile=
+SetupIconFile=..\assets\icon.ico
 
 ; Appearance
 WizardStyle=modern
