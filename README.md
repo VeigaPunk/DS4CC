@@ -76,7 +76,7 @@ Here's the real flow, no buzzwords:
 
 Press buttons → things happen. D-pad sends arrow keys. Right stick scrolls. Face buttons map to Enter, Escape, Tab.
 
-Three profiles: **Default**, **Tmux**, and **OpenCode**, cycled with the PS button. All are fully customizable — just ask Claude to change the mappings in the source and rebuild. Want a different button for Ctrl+C? Different tmux bindings? Change it per profile.
+Two profiles: **Default** and **Tmux**, cycled with the PS button. All are fully customizable — just ask Claude to change the mappings in the source and rebuild. Want a different button for Ctrl+C? Different tmux bindings? Change it per profile.
 
 #### Always Active
 
@@ -91,7 +91,7 @@ Three profiles: **Default**, **Tmux**, and **OpenCode**, cycled with the PS butt
 | Touchpad press | Left mouse click (always active) |
 | Left stick | Move mouse cursor (stick mode) |
 | L2 | Wispr speech-to-text (hold to dictate) |
-| PS | Cycle profile (Default → Tmux → OpenCode) |
+| PS | Cycle profile (Default ↔ Tmux) |
 | Mute | Toggle system microphone |
 
 Mouse movement mode is toggled from the tray icon: **Mouse: Left Stick** switches between touchpad swipe and left analog stick for cursor control. Touchpad click is always active regardless of mode.
@@ -119,18 +119,6 @@ Mouse movement mode is toggled from the tray icon: **Mouse: Left Stick** switche
 | R3 | Ctrl+P |
 
 Tmux bindings are auto-detected from the running tmux server via WSL. Falls back to standard defaults if detection fails. Override in config if needed.
-
-#### OpenCode Profile
-
-| Button | Action |
-|---|---|
-| Square (□) | OpenCode: new session |
-| L1 | OpenCode: previous session |
-| R1 | OpenCode: next session |
-| L3 | Ctrl+T |
-| R3 | Ctrl+P |
-
-OpenCode keybinds are auto-detected from `~/.config/opencode/opencode.json` via WSL. Install the DS4CC plugin with `bash install-hooks.sh` for agent state feedback.
 
 ### 🎙️ Controller + Wispr = No Keyboard
 
@@ -203,7 +191,7 @@ PS button cycles profile (shortcut mappings). System tray icon shows current pro
 | Mouse: Left Stick | Switch mouse cursor control between touchpad and left stick |
 | Exit | Quit |
 
-Tooltip shows `DS4CC — Default`, `DS4CC — Tmux`, or `DS4CC — OpenCode`.
+Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
 
 ---
 
