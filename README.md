@@ -37,25 +37,21 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 
 ## Quick Start
 
-```bash
-# 1. Download DS4CC-Setup.exe from Releases and install it
- https://github.com/VeigaPunk/DS4CC/releases/latest
-```
+1. Download **[DS4CC-Setup.exe](https://github.com/VeigaPunk/DS4CC/releases/latest)** and run it
+2. Plug in your DualSense and launch DS4CC
 
-Plug in your DualSense. Launch DS4CC.
+**Hooks install automatically on first launch** — DS4CC writes the Claude Code hook into WSL and your Windows user profile. No manual setup needed.
 
-**Hooks are installed automatically on first launch** — DS4CC writes the Claude Code hook and OpenCode plugin into WSL and your Windows user profile. No manual setup needed for most users.
-
-To install manually (or force a reinstall):
+To force a reinstall:
 
 ```bash
 # Run from the repo root in WSL or Git Bash:
 bash install-hooks.sh
 ```
 
-The lightbar reflects the real-time status of your AI agents — across all sessions, on both Windows and WSL CLIs. Rumble kicks in when a long-running task completes, so you never miss the moment.
+The lightbar reflects real-time AI agent status — across all sessions, on both Windows and WSL. Rumble kicks in when a long-running task completes.
 
-Colors, thresholds, and behavior are all customizable via `%APPDATA%\ds4cc\config.toml`.
+Colors, thresholds, and behavior are configurable via `%APPDATA%\ds4cc\config.toml`.
 
 ---
 
@@ -229,9 +225,11 @@ Download **DS4CC-Setup.exe** from [Releases](https://github.com/VeigaPunk/DS4CC/
 - Auto-start is **off by default** (opt-in checkbox)
 - Optional desktop shortcut
 
-### Manual
+### Manual (build from source)
 
-```
+Requires [Rust](https://rustup.rs):
+
+```bash
 cargo build --release
 target\release\ds4cc.exe
 ```
