@@ -168,25 +168,22 @@ impl CodexPoller {
     /// Read the first line of a JSONL file to extract the session_id from
     /// the `session_meta` record. Returns the byte offset just past the
     /// first newline (i.e., where line 2 starts).
+    ///
+    /// Uses `BufReader::read_line` so lines of any length are handled correctly
+    /// (Codex session files with large payloads can exceed naive fixed-buffer limits).
     fn extract_session_id(&mut self, file_path: &Path) -> Option<u64> {
-        let mut file = match std::fs::File::open(file_path) {
+        use std::io::BufRead;
+        let file = match std::fs::File::open(file_path) {
             Ok(f) => f,
             Err(_) => return None,
         };
-        let mut buf = vec![0u8; 4096]; // session_meta is typically < 2KB
-        let n = match file.read(&mut buf) {
-            Ok(n) => n,
+        let mut reader = std::io::BufReader::new(file);
+        let mut first_line = String::new();
+        let bytes_read = match reader.read_line(&mut first_line) {
+            Ok(n) => n as u64,
             Err(_) => return None,
         };
-        let data = &buf[..n];
-        // Find the first newline to delimit line 1
-        let newline_pos = data.iter().position(|&b| b == b'\n');
-        let first_line_bytes = match newline_pos {
-            Some(pos) => &data[..pos],
-            None => data, // no newline yet — file may still be tiny
-        };
-        let first_line = String::from_utf8_lossy(first_line_bytes);
-        if let Ok(record) = serde_json::from_str::<serde_json::Value>(&first_line) {
+        if let Ok(record) = serde_json::from_str::<serde_json::Value>(first_line.trim_end()) {
             if record.get("type").and_then(|v| v.as_str()) == Some("session_meta") {
                 if let Some(id) = record
                     .get("payload")
@@ -198,8 +195,8 @@ impl CodexPoller {
                 }
             }
         }
-        // Return offset past the newline (start of line 2)
-        newline_pos.map(|pos| (pos + 1) as u64)
+        // bytes_read includes the trailing '\n', so this is already the start of line 2.
+        if bytes_read > 0 { Some(bytes_read) } else { None }
     }
 
     /// Process a chunk of bytes: split on newlines, parse complete JSON lines.
@@ -285,9 +282,18 @@ impl CodexPoller {
                 }
             }
             "function_call_output" => {
+                // Consume the tracked tool name (prevents unbounded HashMap growth).
+                let tool_name = payload
+                    .get("call_id")
+                    .and_then(|v| v.as_str())
+                    .and_then(|id| self.call_names.remove(id));
                 // Non-zero exit codes transition the session to "error" state.
                 if let Some(output) = payload.get("output").and_then(|v| v.as_str()) {
                     if has_nonzero_exit(output) {
+                        log::debug!(
+                            "Tool '{}' exited with non-zero code → error",
+                            tool_name.as_deref().unwrap_or("unknown")
+                        );
                         self.write_state(&session_id, "error");
                     }
                 }
@@ -643,15 +649,16 @@ mod tests {
         let files = collect_jsonl_files(&unc).expect("Should read UNC sessions dir");
         assert!(!files.is_empty(), "Should find at least one JSONL file");
 
-        // Try to parse the first line of the first file
+        // Try to parse the first line of the first file.
+        // Use BufReader::read_line so files with long lines (large payloads) parse correctly.
+        use std::io::BufRead;
         let first_file = &files[0];
-        let mut file = std::fs::File::open(first_file).expect("Should open JSONL file via UNC");
-        let mut buf = vec![0u8; 8192];
-        let n = file.read(&mut buf).expect("Should read from UNC");
-        let text = String::from_utf8_lossy(&buf[..n]);
-        let first_line = text.lines().next().expect("Should have at least one line");
+        let file = std::fs::File::open(first_file).expect("Should open JSONL file via UNC");
+        let mut reader = std::io::BufReader::new(file);
+        let mut first_line = String::new();
+        reader.read_line(&mut first_line).expect("Should read first line via UNC");
         let record: serde_json::Value =
-            serde_json::from_str(first_line).expect("First line should be valid JSON");
+            serde_json::from_str(first_line.trim_end()).expect("First line should be valid JSON");
         assert_eq!(
             record.get("type").and_then(|v| v.as_str()),
             Some("session_meta"),
