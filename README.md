@@ -28,9 +28,9 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 
 - **Control tmux** — switch panes, split windows, navigate sessions
 - **Move the mouse and click** — touchpad swipe moves the cursor, touchpad press clicks; or use the left stick for cursor control
-- **Monitors Claude Code / Claude Desktop / Codex activity, on Windows & WSL instances** — lightbar changes when the agent is working
+- **Monitors Claude Code / Claude Desktop / Codex activity, on Windows & WSL instances** — lightbar changes provide a quick overview of agent states
 - **Give you rumble + lightbar feedback** when individual or aggregate agent states conditions are met
-- **Act like a programmable dev companion** — buttons map to real keystrokes
+- **Act like a programmable dev companion** — buttons map to real keystrokes or key combos
 - **Pair with [Wispr](https://wisprflow.ai/) for a keyboard-free workflow** — voice handles text, controller handles everything else
 
 ---
