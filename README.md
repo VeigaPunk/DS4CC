@@ -394,7 +394,7 @@ DS4CC turns that invisible state into:
 
 You feel when the AI finishes.
 
-Pair it with [Wispr](https://wisprflow.ai/) and you don't even need a keyboard. Voice dictates. Controller navigates. The lightbar tells you what the AI is doing. You lean back and ship code from the couch.
+Pair it with [Wispr](https://wisprflow.ai/) and you don't even need a keyboard. Voice dictates. Controller navigates. The lightbar tells you what the agents are doing. You lean back and ship code from the couch.
 
 *This is the way.*
 
