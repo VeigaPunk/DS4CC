@@ -24,10 +24,12 @@ if [ -n "${DS4CC_STATE_DIR:-}" ]; then
 fi
 
 if [ -z "${STATE_DIR:-}" ] && [ -d "/mnt/c" ] && [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then
-    # Fast path: scan for the dedicated DS4CC subdir under each user's Temp folder.
-    for _d in /mnt/c/Users/*/AppData/Local/Temp/DS4CC; do
-        if [ -d "$_d" ]; then
-            STATE_DIR="$_d"
+    # Scan for each user's Temp folder and append the DS4CC subdir.
+    # Check the parent (Temp), not DS4CC itself — the daemon creates DS4CC on startup
+    # but a race can leave it absent when the hook first fires.
+    for _parent in /mnt/c/Users/*/AppData/Local/Temp; do
+        if [ -d "$_parent" ]; then
+            STATE_DIR="$_parent/DS4CC"
             break
         fi
     done

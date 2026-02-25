@@ -22,7 +22,7 @@ const OPENCODE_JS: &str = include_str!("../hooks/opencode/ds4cc-opencode.js");
 
 /// Bump this suffix to force a reinstall on the next launch after an update.
 /// In practice this just needs to change whenever the hook content changes.
-const HOOKS_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-r2");
+const HOOKS_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-r3");
 
 // ── Python one-liner for merging settings.json ──────────────────────────────
 //
@@ -92,20 +92,49 @@ fn install_claude_code_hook() -> bool {
     // Strip Windows CRLF line endings — bash rejects scripts with \r\n.
     let hook_sh = HOOK_SH.replace("\r\n", "\n");
 
-    // Write hook script
+    // Write hook script to WSL home (used by Claude Code CLI in WSL)
     if !wsl::wsl_write("~/.claude/hooks/ds4cc-state.sh", &hook_sh) {
-        log::warn!("setup: failed to write ds4cc-state.sh");
+        log::warn!("setup: failed to write ds4cc-state.sh to WSL");
         return false;
     }
 
-    // Make executable
+    // Make executable in WSL
     wsl::run_wsl("chmod +x ~/.claude/hooks/ds4cc-state.sh");
 
-    // Merge hook entries into settings.json
+    // Also write to Windows user home — Claude Desktop reads hooks from here.
+    install_windows_hook(&hook_sh);
+
+    // Merge hook entries into settings.json (WSL and Windows)
     merge_claude_settings();
 
     log::info!("setup: Claude Code hook installed → ~/.claude/hooks/ds4cc-state.sh");
     true
+}
+
+/// Write the hook script to the Windows user home `.claude\hooks\` directory.
+/// Claude Desktop (Windows app) resolves `~` to %USERPROFILE% when running hooks,
+/// so it reads from here rather than from the WSL home.
+fn install_windows_hook(hook_sh: &str) {
+    let profile = match std::env::var("USERPROFILE") {
+        Ok(p) => p,
+        Err(_) => {
+            log::debug!("setup: USERPROFILE not set, skipping Windows hook install");
+            return;
+        }
+    };
+
+    let hooks_dir = std::path::Path::new(&profile).join(".claude").join("hooks");
+    if let Err(e) = std::fs::create_dir_all(&hooks_dir) {
+        log::warn!("setup: failed to create Windows hooks dir: {e}");
+        return;
+    }
+
+    let hook_path = hooks_dir.join("ds4cc-state.sh");
+    if let Err(e) = std::fs::write(&hook_path, hook_sh) {
+        log::warn!("setup: failed to write Windows hook: {e}");
+    } else {
+        log::info!("setup: Windows hook installed → {}", hook_path.display());
+    }
 }
 
 fn merge_claude_settings() {
@@ -118,6 +147,71 @@ fn merge_claude_settings() {
         log::warn!("setup: run 'bash install-hooks.sh' from the DS4CC repo as a fallback");
     } else {
         log::info!("setup: ~/.claude/settings.json updated");
+    }
+
+    // Also merge into the Windows user settings.json for Claude Desktop.
+    merge_windows_claude_settings();
+}
+
+/// Merge hook entries into `%USERPROFILE%\.claude\settings.json`.
+/// Claude Desktop (Windows app) reads from this file, not from WSL's ~/.claude/settings.json.
+fn merge_windows_claude_settings() {
+    let profile = match std::env::var("USERPROFILE") {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let settings_dir = std::path::Path::new(&profile).join(".claude");
+    let settings_path = settings_dir.join("settings.json");
+
+    // Read existing settings or start fresh
+    let mut config: serde_json::Value = if settings_path.exists() {
+        match std::fs::read_to_string(&settings_path) {
+            Ok(s) => serde_json::from_str(&s).unwrap_or(serde_json::json!({})),
+            Err(_) => serde_json::json!({}),
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    // Build the hook entry
+    let hook_entry = serde_json::json!([{
+        "matcher": "",
+        "hooks": [{"type": "command", "command": "~/.claude/hooks/ds4cc-state.sh"}]
+    }]);
+
+    let hooks = config
+        .as_object_mut()
+        .and_then(|o| {
+            o.entry("hooks")
+                .or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+                .map(|h| {
+                    h.insert("UserPromptSubmit".into(), hook_entry.clone());
+                    h.insert("Stop".into(), hook_entry.clone());
+                    h.insert("PostToolUseFailure".into(), hook_entry.clone());
+                })
+        });
+
+    if hooks.is_none() {
+        log::warn!("setup: failed to merge Windows settings.json hooks");
+        return;
+    }
+
+    if let Err(e) = std::fs::create_dir_all(&settings_dir) {
+        log::warn!("setup: failed to create Windows .claude dir: {e}");
+        return;
+    }
+
+    match serde_json::to_string_pretty(&config) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&settings_path, json + "\n") {
+                log::warn!("setup: failed to write Windows settings.json: {e}");
+            } else {
+                log::info!("setup: Windows settings.json updated → {}", settings_path.display());
+            }
+        }
+        Err(e) => log::warn!("setup: failed to serialize Windows settings.json: {e}"),
     }
 }
 
