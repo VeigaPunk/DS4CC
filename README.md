@@ -153,7 +153,7 @@ Each agent is tracked individually:
 
 Your controller becomes a status light.
 
-- **Lightbar** — color reflects agent state. Pulsing blue = thinking. Green = done. Configurable RGB.
+- **Lightbar** — color reflects agents state. Pulsing blue = working. Green = (long task) done. Configurable RGB & thresholds.
 - **Rumble** — haptic patterns on state transitions. You feel when the AI finishes.
 - **Profile LEDs** — Profile 1 = 1 White LED on controller, Profile 2 = 2 White LEDs.
 - **Mic mute** — mute button toggles system microphone via Core Audio. LED lit = muted. Works on any profile.
