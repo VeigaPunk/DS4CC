@@ -338,6 +338,11 @@ async fn run_output_loop(
     let mut current_state = AgentState::Idle;
     let mut state_start = Instant::now();
 
+    // Shared rumble motor values — updated by fire_rumble, read by the ticker each frame.
+    // This ensures the ticker doesn't overwrite active rumble with zeros every 33ms.
+    let rumble_left = Arc::new(AtomicU8::new(0));
+    let rumble_right = Arc::new(AtomicU8::new(0));
+
     // Prime mic mute state from system before first frame
     tokio::task::spawn_blocking(mic::init).await.ok();
 
@@ -350,6 +355,8 @@ async fn run_output_loop(
         current_state,
         0,
         PLAYER1_LEDS,
+        0,
+        0,
         &mut bt_seq,
     );
 
@@ -362,18 +369,20 @@ async fn run_output_loop(
             _ = ticker.tick() => {
                 let elapsed = state_start.elapsed().as_millis() as u64;
                 let leds = player_leds.load(Ordering::Relaxed);
-                send_output(&handle, ct, conn, &lightbar_cfg, current_state, elapsed, leds, &mut bt_seq);
+                let rl = rumble_left.load(Ordering::Relaxed);
+                let rr = rumble_right.load(Ordering::Relaxed);
+                send_output(&handle, ct, conn, &lightbar_cfg, current_state, elapsed, leds, rl, rr, &mut bt_seq);
             }
             _ = idle_rx.recv() => {
                 // Per-agent idle reminder — fire rumble
                 log::info!("Per-agent idle reminder rumble triggered");
-                fire_rumble(&handle, ct, conn, &rumble::idle_reminder_pattern());
+                fire_rumble(&rumble::idle_reminder_pattern(), Arc::clone(&rumble_left), Arc::clone(&rumble_right));
             }
             _ = done_rx.recv() => {
                 // Per-agent Working → Done — fire celebratory rumble
                 log::info!("Per-agent done rumble triggered");
                 if let Some(pattern) = rumble::pattern_for_transition(AgentState::Working, AgentState::Done) {
-                    fire_rumble(&handle, ct, conn, &pattern);
+                    fire_rumble(&pattern, Arc::clone(&rumble_left), Arc::clone(&rumble_right));
                 }
             }
             result = state_rx.changed() => {
@@ -392,25 +401,19 @@ async fn run_output_loop(
     }
 }
 
-/// Spawn a rumble pattern on the controller (non-blocking).
+/// Spawn a rumble pattern (non-blocking).
+/// Updates shared atomics that the output ticker reads each frame, so the
+/// 33ms ticker doesn't overwrite active rumble with zeros mid-pattern.
 fn fire_rumble(
-    handle: &hid::HidHandle,
-    ct: controller::ControllerType,
-    conn: controller::ConnectionType,
     pattern: &[rumble::RumbleStep],
+    rumble_left: Arc<AtomicU8>,
+    rumble_right: Arc<AtomicU8>,
 ) {
-    let rumble_handle = handle.clone_handle();
     let pattern = pattern.to_vec();
     tokio::spawn(async move {
-        let mut seq = 0u8;
         rumble::play_pattern(&pattern, |left, right| {
-            let out = OutputState {
-                rumble_left: left,
-                rumble_right: right,
-                ..Default::default()
-            };
-            let report = output::build_report(ct, conn, &out, &mut seq);
-            rumble_handle.write(&report);
+            rumble_left.store(left, Ordering::Relaxed);
+            rumble_right.store(right, Ordering::Relaxed);
         }).await;
     });
 }
@@ -423,6 +426,8 @@ fn send_output(
     state: AgentState,
     elapsed_ms: u64,
     player_leds: u8,
+    rumble_left: u8,
+    rumble_right: u8,
     bt_seq: &mut u8,
 ) {
     let (r, g, b) = lightbar::compute_color(lightbar_cfg, state, elapsed_ms);
@@ -430,8 +435,8 @@ fn send_output(
         lightbar_r: r,
         lightbar_g: g,
         lightbar_b: b,
-        rumble_left: 0,
-        rumble_right: 0,
+        rumble_left,
+        rumble_right,
         player_leds,
         mute_led: mic::MIC_MUTED.load(std::sync::atomic::Ordering::Relaxed) as u8,
     };
