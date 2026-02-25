@@ -106,7 +106,12 @@ function IsWSL2Present(): Boolean;
 var
   ResultCode: Integer;
 begin
-  Result := Exec(ExpandConstant('{sys}\wsl.exe'), '--status', '',
+  { Use {sysnative} to bypass WOW64 filesystem redirection — the Inno Setup
+    installer is 32-bit, so {sys} would resolve to SysWOW64 which does NOT
+    contain wsl.exe.  {sysnative} always points to the real System32.
+    Run "wsl -e true" rather than "wsl --status": --status has unreliable
+    exit codes on some machines; -e true returns 0 iff WSL is functional. }
+  Result := Exec(ExpandConstant('{sysnative}\wsl.exe'), '-e true', '',
                  SW_HIDE, ewWaitUntilTerminated, ResultCode)
             and (ResultCode = 0);
 end;
