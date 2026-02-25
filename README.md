@@ -42,13 +42,6 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 
 **Hooks install automatically on first launch** — DS4CC writes the Claude Code hook into WSL and your Windows user profile. No manual setup needed.
 
-To force a reinstall:
-
-```bash
-# Run from the repo root in WSL or Git Bash:
-bash install-hooks.sh
-```
-
 The lightbar reflects real-time AI agent status — across all sessions, on both Windows and WSL. Rumble kicks in when a long-running task completes.
 
 Colors, thresholds, and behavior are configurable via `%APPDATA%\ds4cc\config.toml`.
