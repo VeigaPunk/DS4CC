@@ -191,56 +191,23 @@ pub async fn poll_state_file(
             let _ = tx.send(aggregated);
         }
 
-        // Per-agent tracking (idle reminders + Working→Done rumble)
         let now = Instant::now();
 
-        // Cooldown: skip per-agent checks for 5s after firing a reminder
-        if let Some(cd) = reminder_cooldown {
-            if now.duration_since(cd) < Duration::from_secs(5) {
-                // Still in cooldown — only update tracker for new/changed agents
-                for (id, state) in &current_agents {
-                    match agent_tracker.get(id) {
-                        Some((prev_state, _)) if *prev_state != *state => {
-                            agent_tracker.insert(id.clone(), (*state, now));
-                            reminder_fired.remove(id);
-                        }
-                        None => {
-                            agent_tracker.insert(id.clone(), (*state, now));
-                        }
-                        _ => {}
-                    }
-                }
-                agent_tracker.retain(|id, _| current_agents.contains_key(id));
-                reminder_fired.retain(|id| current_agents.contains_key(id));
-                continue;
-            } else {
-                reminder_cooldown = None;
-            }
-        }
+        // Resolve cooldown
+        let in_cooldown = match reminder_cooldown {
+            Some(cd) if now.duration_since(cd) < Duration::from_secs(5) => true,
+            Some(_) => { reminder_cooldown = None; false }
+            None => false,
+        };
 
-        let mut idle_reminder_this_tick = false;
-
+        // 1. Update tracker for agents with active state files
         for (id, state) in &current_agents {
             match agent_tracker.get(id) {
-                Some((prev_state, since)) if *prev_state == *state => {
-                    // State unchanged — check idle threshold
-                    if idle_reminder_s > 0
-                        && *state == AgentState::Idle
-                        && !reminder_fired.contains(id)
-                        && now.duration_since(*since) >= idle_reminder_dur
-                    {
-                        log::info!(
-                            "Per-agent idle reminder: agent {id} idle for {}s",
-                            now.duration_since(*since).as_secs()
-                        );
-                        reminder_fired.insert(id.clone());
-                        idle_reminder_this_tick = true;
-                    }
-                }
-                Some((prev_state, since)) => {
-                    // State changed — check for Working → Done transition
+                Some((prev, _)) if *prev == *state => { /* unchanged */ }
+                Some((prev, since)) => {
+                    // State changed — check Working → Done
                     let elapsed = now.duration_since(*since);
-                    if *prev_state == AgentState::Working && *state == AgentState::Done {
+                    if *prev == AgentState::Working && *state == AgentState::Done {
                         if elapsed >= done_threshold {
                             log::info!(
                                 "Per-agent done: agent {id} worked for {}s → rumble",
@@ -259,21 +226,57 @@ pub async fn poll_state_file(
                     reminder_fired.remove(id);
                 }
                 None => {
-                    // New agent
                     agent_tracker.insert(id.clone(), (*state, now));
                 }
             }
         }
 
-        // Fire at most one idle reminder per poll tick
-        if idle_reminder_this_tick {
-            let _ = idle_reminder_tx.try_send(());
-            reminder_cooldown = Some(now);
+        // 2. Transition disappeared agents to Idle in-memory.
+        //    scan_agent_states deletes idle files immediately (keeps the dir lean);
+        //    we continue tracking their idle duration here so the reminder can fire.
+        for id in agent_tracker.keys().cloned().collect::<Vec<_>>() {
+            if !current_agents.contains_key(&id) {
+                if let Some((state, since)) = agent_tracker.get_mut(&id) {
+                    if *state != AgentState::Idle {
+                        *state = AgentState::Idle;
+                        *since = now;
+                        reminder_fired.remove(&id);
+                    }
+                }
+            }
         }
 
-        // Remove agents that no longer have state files
-        agent_tracker.retain(|id, _| current_agents.contains_key(id));
-        reminder_fired.retain(|id| current_agents.contains_key(id));
+        // 3. Check idle reminders across all tracked agents (skip during cooldown)
+        if !in_cooldown {
+            let mut fired_this_tick = false;
+            for (id, (state, since)) in &agent_tracker {
+                if idle_reminder_s > 0
+                    && *state == AgentState::Idle
+                    && !reminder_fired.contains(id)
+                    && now.duration_since(*since) >= idle_reminder_dur
+                {
+                    log::info!(
+                        "Per-agent idle reminder: agent {id} idle for {}s",
+                        now.duration_since(*since).as_secs()
+                    );
+                    reminder_fired.insert(id.clone());
+                    fired_this_tick = true;
+                }
+            }
+            if fired_this_tick {
+                let _ = idle_reminder_tx.try_send(());
+                reminder_cooldown = Some(now);
+            }
+        }
+
+        // 4. Prune idle agents whose reminder has already fired.
+        //    Active agents are always kept. Idle-in-memory agents are kept only
+        //    while their reminder is still pending.
+        agent_tracker.retain(|id, (state, _)| {
+            if current_agents.contains_key(id) { return true; }
+            idle_reminder_s > 0 && *state == AgentState::Idle && !reminder_fired.contains(id)
+        });
+        reminder_fired.retain(|id| agent_tracker.contains_key(id));
     }
 }
 

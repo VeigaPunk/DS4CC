@@ -27,8 +27,8 @@ Make invisible processes tactile. Make AI state observable. Reduce keyboard fric
 DS4CC is a small Rust program that runs in the background and lets your PlayStation controller:
 
 - **Control tmux** — switch panes, split windows, navigate sessions
-- **Move the mouse cursor** — touchpad swipe or left stick, switchable from the tray
-- **React to Claude Code / Codex activity** — lightbar changes when the AI is thinking
+- **Move the mouse and click** — touchpad swipe moves the cursor, touchpad press clicks; or use the left stick for cursor control
+- **React to Claude Code / Claude Desktop / Codex activity** — lightbar changes when the AI is thinking
 - **Give you rumble + lightbar feedback** when things happen
 - **Act like a programmable dev companion** — buttons map to real keystrokes
 - **Pair with [Wispr](https://wisprflow.ai/) for a keyboard-free workflow** — voice handles text, controller handles everything else
@@ -40,15 +40,20 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 ```bash
 # 1. Download DS4CC-Setup.exe from Releases and install it
 # https://github.com/VeigaPunk/DS4CC/releases/latest
+```
 
-# 2. Install Claude Code hooks (WSL or Git Bash):
-git clone https://github.com/VeigaPunk/DS4CC.git && cd DS4CC
+Plug in your DualSense. Launch DS4CC.
+
+**Hooks are installed automatically on first launch** — DS4CC writes the Claude Code hook and OpenCode plugin into WSL and your Windows user profile. No manual setup needed for most users.
+
+To install manually (or force a reinstall):
+
+```bash
+# Run from the repo root in WSL or Git Bash:
 bash install-hooks.sh
 ```
 
-Plug in your DualSense. Launch DS4CC. Open Claude Code or Codex.
-
-The lightbar reflects the real-time status of your AI agents — across all sessions, on both Windows and WSL CLIs. Rumble kicks in when a long-running task completes or an agent has been idle for a while, so you never miss the moment.
+The lightbar reflects the real-time status of your AI agents — across all sessions, on both Windows and WSL CLIs. Rumble kicks in when a long-running task completes, so you never miss the moment.
 
 Colors, thresholds, and behavior are all customizable via `%APPDATA%\ds4cc\config.toml`.
 
@@ -62,9 +67,10 @@ Here's the real flow, no buzzwords:
 2. It loads your config (`%APPDATA%\ds4cc\config.toml`, or defaults)
 3. It starts a tray icon
 4. It creates `%TEMP%\DS4CC\` (cleaning any leftover agent files from crashed sessions), then starts watching it
-5. It starts polling Codex JSONL session logs via `\\wsl.localhost\` (if available)
-6. It connects to your controller via HID
-7. It enters two loops:
+5. It auto-installs Claude Code hooks into WSL and the Windows user profile (first run / after update)
+6. It starts polling Codex JSONL session logs via `\\wsl.localhost\` (if available)
+7. It connects to your controller via HID
+8. It enters two loops:
    - **Input** — read buttons → send keystrokes, toggle profiles (shortcut mapping)
    - **Output** — conditional agent states → lightbar color | rumble
 
@@ -87,8 +93,8 @@ Two profiles: **Default** and **Tmux**, cycled with the PS button. All are fully
 | Triangle (△) | Tab |
 | D-pad | Arrow keys |
 | Right stick | Scroll (vertical + horizontal) |
-| Touchpad touch | Move mouse cursor (touchpad mode) |
-| Touchpad press | Left mouse click (always active) |
+| Touchpad touch | Move mouse cursor |
+| **Touchpad press** | **Left mouse click** |
 | Left stick | Move mouse cursor (stick mode) |
 | L2 | Wispr speech-to-text (hold to dictate) |
 | PS | Cycle profile (Default ↔ Tmux) |
@@ -135,14 +141,14 @@ This is the workflow DS4CC was built for: voice + gamepad + AI agents. No keyboa
 
 ### 🤖 Controller → AI Awareness
 
-DS4CC monitors Claude Code and Codex by watching state files. When the AI is:
+DS4CC monitors Claude Code, Claude Desktop, and Codex by watching state files. When the AI is:
 
 - **Working** → lightbar pulses blue
 - **Done** → lightbar flashes green, rumble kicks
 - **Error** → silently recovers (no visual noise)
 - **Idle** → default color
 
-**Claude Code** — shell hooks in `~/.claude/hooks/` write per-session state files to `%TEMP%\DS4CC\` on lifecycle events.
+**Claude Code / Claude Desktop** — shell hooks in `~/.claude/hooks/` write per-session state files to `%TEMP%\DS4CC\` on lifecycle events. Hooks are installed automatically into both WSL and the Windows user profile on first launch.
 
 **OpenCode** — a JS plugin (`~/.config/opencode/plugins/ds4cc-opencode.js`) writes the same state files on session status events. Installed automatically by `bash install-hooks.sh`.
 
@@ -175,7 +181,7 @@ The agent can be in one of four states:
 Working > Error > Done > Idle
 ```
 
-Priority logic: if any session is working, the controller shows working. "Done" automatically becomes idle after a configurable timeout. Stale "working" states (crashed sessions) get cleaned up after 15 minutes.
+Priority logic: if any session is working, the controller shows working. "Done" automatically becomes idle after a configurable timeout. Stale "working" states (crashed sessions) get cleaned up after 10 minutes.
 
 This prevents zombie states.
 
@@ -209,7 +215,7 @@ Bluetooth supports all features except Microphone Input (WIP).
 - Windows 10 / 11
 - DualSense controller (USB or Bluetooth)
 - **Optional:** WSL2 — needed for Tmux profile and Codex integration
-- **Optional:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex](https://openai.com/index/codex/) for AI agent state feedback
+- **Optional:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Claude Desktop](https://claude.ai/download), or [Codex](https://openai.com/index/codex/) for AI agent state feedback
 
 ---
 
@@ -234,22 +240,22 @@ target\release\ds4cc.exe
 
 ## Hook Setup
 
-### Claude Code + OpenCode
+Hooks are **installed automatically on first launch**. DS4CC writes the hook script to both WSL (`~/.claude/hooks/`) and the Windows user profile (`%USERPROFILE%\.claude\hooks\`), and registers it in `settings.json` for both Claude Code CLI and Claude Desktop.
 
-Run from the repo root in WSL or Git Bash:
+To install manually or force a reinstall, run from the repo root in WSL or Git Bash:
 
 ```bash
 bash install-hooks.sh
 ```
 
-This installs both the Claude Code hook and the OpenCode plugin in one shot:
+This installs both the Claude Code hook and the OpenCode plugin:
 
-- **Claude Code** — copies `ds4cc-state.sh` to `~/.claude/hooks/` and merges the hook config into `~/.claude/settings.json`
+- **Claude Code / Claude Desktop** — copies `ds4cc-state.sh` to `~/.claude/hooks/` (WSL) and `%USERPROFILE%\.claude\hooks\` (Windows), and merges hook config into both `settings.json` files
 - **OpenCode** — copies `ds4cc-opencode.js` to `~/.config/opencode/plugins/`
 
-Both hooks write agent state files to `%TEMP%\DS4CC\` (auto-discovered — no config needed).
+All hooks write agent state files to `%TEMP%\DS4CC\` (auto-discovered — no config needed).
 
-| Claude Code Event | What happens |
+| Claude Code / Desktop Event | What happens |
 |---|---|
 | `UserPromptSubmit` | Lightbar → blue pulse (working) |
 | `Stop` | Lightbar → green (done) if task exceeded threshold, else idle |
@@ -262,7 +268,7 @@ Both hooks write agent state files to `%TEMP%\DS4CC\` (auto-discovered — no co
 | `session.error` | Logged as error |
 | `session.deleted` | State file removed |
 
-Restart Claude Code / OpenCode after installing hooks.
+Restart Claude Code / Claude Desktop / OpenCode after installing hooks.
 
 ### Codex
 
@@ -315,8 +321,8 @@ done_threshold_s = 600    # seconds before "done" fires (vs. straight to idle)
 # Lightbar colors (RGB) — customize per state
 [lightbar.idle]
 r = 255
-g = 255
-b = 255
+g = 140
+b = 0
 
 [lightbar.working]
 r = 0
