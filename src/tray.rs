@@ -1,6 +1,6 @@
-/// System tray icon: DualSense controller silhouette (SDF-rendered, anti-aliased).
-/// White on transparent (OLED black) = Default profile.
-/// Neon green on transparent (OLED black) = Tmux profile.
+/// System tray icon: DualSense PNG silhouette, luminance-tinted per profile.
+/// White on OLED black = Default profile.
+/// Neon green on OLED black = Tmux profile.
 ///
 /// Right-click context menu:
 ///   Open Wispr Flow
@@ -288,89 +288,46 @@ fn set_auto_start(enabled: bool) {
     }
 }
 
+// ── Embedded controller PNG ────────────────────────────────────────────
+
+/// White DualSense silhouette on near-black background.
+/// Same source image used for icon.ico (exe / installer icon).
+const ICON_PNG: &[u8] = include_bytes!("../imgs/ChatGPT Image Feb 23, 2026, 05_30_47 AM.png");
+
 // ── Profile colors / icon ─────────────────────────────────────────────
 
 fn profile_color(profile: Profile) -> (u8, u8, u8) {
     match profile {
-        Profile::Default => (255, 255, 255), // white — visible on OLED black taskbar
-        Profile::Tmux    => (57, 255, 20),   // neon green
+        Profile::Default => (255, 255, 255), // white on OLED black
+        Profile::Tmux    => (57, 255, 20),   // neon green (#39FF14)
     }
 }
 
-fn make_icon(r: u8, g: u8, b: u8) -> Icon {
-    let rgba = generate_controller_rgba(r, g, b);
-    Icon::from_rgba(rgba, ICON_SIZE, ICON_SIZE).expect("valid icon data")
-}
-
-/// Generate 32×32 RGBA pixels of a DualSense-style controller silhouette.
-/// Uses signed-distance field rendering with sub-pixel anti-aliasing.
-fn generate_controller_rgba(r: u8, g: u8, b: u8) -> Vec<u8> {
-    let mut rgba = vec![0u8; (ICON_SIZE * ICON_SIZE * 4) as usize];
-    for y in 0..ICON_SIZE {
-        for x in 0..ICON_SIZE {
-            // Sample at pixel centre
-            let d = controller_sdf(x as f32 + 0.5, y as f32 + 0.5);
-            // Linear ramp: fully opaque at d=-0.5, fully transparent at d=+0.5
-            let alpha = (0.5 - d).clamp(0.0, 1.0);
-            if alpha > 0.0 {
-                let i = ((y * ICON_SIZE + x) * 4) as usize;
-                rgba[i]     = r;
-                rgba[i + 1] = g;
-                rgba[i + 2] = b;
-                rgba[i + 3] = (alpha * 255.0) as u8;
-            }
-        }
-    }
-    rgba
-}
-
-// ── SDF primitives ────────────────────────────────────────────────────
-
-/// Smooth minimum — blends two SDF surfaces with a continuous tangent.
-fn smin(a: f32, b: f32, k: f32) -> f32 {
-    let h = (0.5 + 0.5 * (b - a) / k).clamp(0.0, 1.0);
-    a * h + b * (1.0 - h) - k * h * (1.0 - h)
-}
-
-fn sdf_circle(px: f32, py: f32, cx: f32, cy: f32, r: f32) -> f32 {
-    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt() - r
-}
-
-/// Axis-aligned rounded rectangle SDF. Returns ≤ 0 inside.
-fn sdf_rounded_rect(px: f32, py: f32, cx: f32, cy: f32, hw: f32, hh: f32, r: f32) -> f32 {
-    let r = r.min(hw).min(hh);
-    let qx = (px - cx).abs() - hw + r;
-    let qy = (py - cy).abs() - hh + r;
-    qx.max(0.0).hypot(qy.max(0.0)) + qx.min(0.0).max(qy.min(0.0)) - r
-}
-
-/// Signed-distance field for the DualSense controller silhouette.
-/// Negative = inside, positive = outside.
+/// Load the embedded DualSense PNG, resize to 32×32, and tint the silhouette.
 ///
-/// Construction:
-///   Body  — wide rounded rect with large corner radius (squircle feel).
-///   Grips — each is a smooth union (smin) of two circles:
-///            upper circle anchors to the body; lower circle is offset
-///            slightly outward, producing the characteristic DualSense flare.
-fn controller_sdf(x: f32, y: f32) -> f32 {
-    // ── Body ──────────────────────────────────────────────────────────
-    // 24 × 15 px, corner radius 6 → very organic, pill-like
-    let body = sdf_rounded_rect(x, y, 15.5, 12.0, 12.0, 7.5, 6.0);
+/// The source image is a white controller on a near-black background.
+/// Each output pixel is fully opaque — luminance of the source pixel scales
+/// the tint color, so the white silhouette becomes the tint, edges anti-alias
+/// smoothly, and the OLED-black background stays black.
+fn make_icon(r: u8, g: u8, b: u8) -> Icon {
+    let img = image::load_from_memory(ICON_PNG)
+        .expect("embedded controller PNG is valid")
+        .resize_exact(ICON_SIZE, ICON_SIZE, image::imageops::FilterType::Lanczos3)
+        .into_rgb8();
 
-    // ── Left grip ─────────────────────────────────────────────────────
-    let lg_neck = sdf_circle(x, y,  8.5, 20.0, 4.0); // where grip meets body
-    let lg_tip  = sdf_circle(x, y,  7.0, 26.0, 4.0); // tip — offset left for flare
-    let l_grip  = smin(lg_neck, lg_tip, 3.5);
+    let mut rgba = Vec::with_capacity((ICON_SIZE * ICON_SIZE * 4) as usize);
+    for pixel in img.pixels() {
+        // Rec. 601 luminance (0–255): white silhouette → high, black bg → low.
+        let lum = (pixel[0] as u32 * 299
+            + pixel[1] as u32 * 587
+            + pixel[2] as u32 * 114) / 1000;
+        let tr = (r as u32 * lum / 255) as u8;
+        let tg = (g as u32 * lum / 255) as u8;
+        let tb = (b as u32 * lum / 255) as u8;
+        rgba.extend_from_slice(&[tr, tg, tb, 255]);
+    }
 
-    // ── Right grip (perfect mirror) ───────────────────────────────────
-    let rg_neck = sdf_circle(x, y, 22.5, 20.0, 4.0);
-    let rg_tip  = sdf_circle(x, y, 24.0, 26.0, 4.0);
-    let r_grip  = smin(rg_neck, rg_tip, 3.5);
-
-    // ── Final union ───────────────────────────────────────────────────
-    // Hard union of the two grips (they never overlap), then smooth-blend
-    // into the body so the transition is seamless.
-    smin(body, l_grip.min(r_grip), 3.0)
+    Icon::from_rgba(rgba, ICON_SIZE, ICON_SIZE).expect("valid icon data")
 }
 
 #[cfg(test)]
@@ -378,32 +335,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn icon_center_is_filled() {
-        assert!(controller_sdf(15.5, 12.0) < 0.0);
-        assert!(controller_sdf(16.0, 12.0) < 0.0);
+    fn default_icon_loads() {
+        let (r, g, b) = profile_color(Profile::Default);
+        make_icon(r, g, b); // must not panic
     }
 
     #[test]
-    fn icon_corners_are_empty() {
-        assert!(controller_sdf(0.5,  0.5)  > 0.0);
-        assert!(controller_sdf(31.5, 0.5)  > 0.0);
-        assert!(controller_sdf(0.5,  31.5) > 0.0);
-        assert!(controller_sdf(31.5, 31.5) > 0.0);
-    }
-
-    #[test]
-    fn icon_grips_exist() {
-        // Left grip tip
-        assert!(controller_sdf(7.5, 25.0) < 0.0);
-        // Right grip tip
-        assert!(controller_sdf(24.0, 25.0) < 0.0);
-        // Hollow gap between grips at the bottom
-        assert!(controller_sdf(15.5, 28.0) > 0.0);
+    fn tmux_icon_loads() {
+        let (r, g, b) = profile_color(Profile::Tmux);
+        make_icon(r, g, b); // must not panic
     }
 
     #[test]
     fn rgba_has_correct_size() {
-        let rgba = generate_controller_rgba(255, 0, 0);
-        assert_eq!(rgba.len(), (32 * 32 * 4) as usize);
+        let (r, g, b) = profile_color(Profile::Default);
+        let icon = make_icon(r, g, b);
+        drop(icon); // Icon::from_rgba already validates size internally
     }
 }
