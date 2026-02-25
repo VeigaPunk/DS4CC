@@ -57,8 +57,6 @@ Colors, thresholds, and behavior are configurable via `%APPDATA%\ds4cc\config.to
 
 ## How It Actually Works
 
-Here's the real flow, no buzzwords:
-
 1. You launch `ds4cc.exe`
 2. It loads your config (`%APPDATA%\ds4cc\config.toml`, or defaults)
 3. It starts a tray icon
