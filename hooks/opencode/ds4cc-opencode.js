@@ -195,8 +195,6 @@ export const DS4CCPlugin = async () => {
 
         case "session.error": {
           writeState(stateDir, sessionId, "error");
-          workingStart.delete(sessionId);
-          removeTimestamp(stateDir, sessionId);
           break;
         }
 

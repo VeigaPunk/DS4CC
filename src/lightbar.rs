@@ -4,7 +4,6 @@
 ///   Idle    → orange, solid
 ///   Working → blue, pulsing (sinusoidal brightness)
 ///   Done    → green, solid
-///   Error   → same as working (blue pulse) — tool failures don't mean the agent stopped
 
 use crate::config::LightbarConfig;
 use crate::state::AgentState;
@@ -18,9 +17,9 @@ pub fn compute_color(
     match state {
         AgentState::Idle => (config.idle.r, config.idle.g, config.idle.b),
         AgentState::Done => (config.done.r, config.done.g, config.done.b),
-        AgentState::Error | AgentState::Working => {
+        AgentState::Error => (config.error.r, config.error.g, config.error.b),
+        AgentState::Working => {
             // Sinusoidal pulse: brightness oscillates between 0.3 and 1.0
-            // Error uses the same visual as working — tool failures don't stop the agent.
             let period = config.pulse_period_ms as f64;
             let phase = (elapsed_ms as f64 / period) * std::f64::consts::TAU;
             let brightness = 0.65 + 0.35 * phase.sin(); // range [0.3, 1.0]
@@ -74,12 +73,4 @@ mod tests {
         assert_eq!((r, g, b), (0, 255, 0));
     }
 
-    #[test]
-    fn error_pulses_like_working() {
-        let cfg = default_config();
-        // Error uses the same blue pulse as working — agent is still running.
-        let (r, g, b) = compute_color(&cfg, AgentState::Error, 0);
-        let (wr, wg, wb) = compute_color(&cfg, AgentState::Working, 0);
-        assert_eq!((r, g, b), (wr, wg, wb));
-    }
 }

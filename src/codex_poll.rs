@@ -285,7 +285,7 @@ impl CodexPoller {
                 }
             }
             "function_call_output" => {
-                // Check for non-zero exit code
+                // Non-zero exit codes transition the session to "error" state.
                 if let Some(output) = payload.get("output").and_then(|v| v.as_str()) {
                     if has_nonzero_exit(output) {
                         self.write_state(&session_id, "error");
@@ -358,6 +358,19 @@ fn collect_jsonl_recursive(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Resul
     Ok(())
 }
 
+/// Returns true if the tool output string contains a non-zero process exit code,
+/// e.g. "Process exited with code 1" or "Process exited with code 127".
+fn has_nonzero_exit(output: &str) -> bool {
+    for line in output.lines() {
+        if let Some(rest) = line.strip_prefix("Process exited with code ") {
+            if let Ok(code) = rest.trim().parse::<i32>() {
+                return code != 0;
+            }
+        }
+    }
+    false
+}
+
 /// Read bytes from `offset` to `size` in a file.
 fn read_chunk(path: &Path, offset: u64, size: u64) -> Option<Vec<u8>> {
     let mut file = std::fs::File::open(path).ok()?;
@@ -369,21 +382,6 @@ fn read_chunk(path: &Path, offset: u64, size: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-/// Check if an output string contains a non-zero exit code.
-fn has_nonzero_exit(output: &str) -> bool {
-    // Match "Process exited with code N" where N != 0
-    if let Some(pos) = output.find("Process exited with code ") {
-        let after = &output[pos + 25..];
-        if let Some(end) = after.find(|c: char| !c.is_ascii_digit()) {
-            if let Ok(code) = after[..end].parse::<i32>() {
-                return code != 0;
-            }
-        } else if let Ok(code) = after.trim().parse::<i32>() {
-            return code != 0;
-        }
-    }
-    false
-}
 
 #[cfg(test)]
 mod tests {
@@ -488,6 +486,7 @@ mod tests {
         drop(f);
 
         poller.poll();
+        // user_message sets "working"; function_call_output with non-zero exit writes "error".
         assert_eq!(
             std::fs::read_to_string(state_dir.join("ds4cc_agent_test-123")).unwrap(),
             "error"
