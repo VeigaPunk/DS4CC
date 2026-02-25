@@ -5,7 +5,7 @@
 ;   3. Press Compile — output lands in installer\output\DS4CC-Setup.exe
 
 #define MyAppName      "DS4CC"
-#define MyAppVersion   "2.0"
+#define MyAppVersion   "2.3.3"
 #define MyAppPublisher "VeigaPunk"
 #define MyAppURL       "https://github.com/VeigaPunk/DS4CC"
 #define MyAppExe       "ds4cc.exe"
@@ -46,9 +46,9 @@ UninstallDisplayIcon={app}\{#MyAppExe}
 UninstallDisplayName={#MyAppName}
 
 ; Version info embedded in the installer .exe
-VersionInfoVersion=2.0.0.0
+VersionInfoVersion=2.3.3.0
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=2.0
+VersionInfoProductVersion=2.3.3
 
 ; ── Languages ──────────────────────────────────────────────────────────
 [Languages]
