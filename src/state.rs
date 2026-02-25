@@ -284,14 +284,15 @@ mod tests {
         assert_eq!(AgentState::parse("idle"), Some(AgentState::Idle));
         assert_eq!(AgentState::parse("WORKING"), Some(AgentState::Working));
         assert_eq!(AgentState::parse("  done\n"), Some(AgentState::Done));
-        assert_eq!(AgentState::parse("error"), Some(AgentState::Error));
+        assert_eq!(AgentState::parse("Error"), Some(AgentState::Error));
         assert_eq!(AgentState::parse("unknown"), None);
         assert_eq!(AgentState::parse(""), None);
     }
 
     #[test]
     fn priority_order() {
-        assert!(AgentState::Working.priority() > AgentState::Done.priority());
+        assert!(AgentState::Working.priority() > AgentState::Error.priority());
+        assert!(AgentState::Error.priority() > AgentState::Done.priority());
         assert!(AgentState::Done.priority() > AgentState::Idle.priority());
     }
 
