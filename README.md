@@ -61,7 +61,7 @@ Here's the real flow, no buzzwords:
 1. You launch `ds4cc.exe`
 2. It loads your config (`%APPDATA%\ds4cc\config.toml`, or defaults)
 3. It starts a tray icon
-4. It starts watching agent state files in `%TEMP%`
+4. It creates `%TEMP%\DS4CC\` (cleaning any leftover agent files from crashed sessions), then starts watching it
 5. It starts polling Codex JSONL session logs via `\\wsl.localhost\` (if available)
 6. It connects to your controller via HID
 7. It enters two loops:
@@ -154,11 +154,13 @@ DS4CC monitors Claude Code and Codex by watching state files. When the AI is:
 - **Error** → silently recovers (no visual noise)
 - **Idle** → default color
 
-**Claude Code** — shell hooks in `~/.claude/hooks/` write per-session state files to `%TEMP%` on lifecycle events.
+**Claude Code** — shell hooks in `~/.claude/hooks/` write per-session state files to `%TEMP%\DS4CC\` on lifecycle events.
+
+**OpenCode** — a JS plugin (`~/.config/opencode/plugins/ds4cc-opencode.js`) writes the same state files on session status events. Installed automatically by `bash install-hooks.sh`.
 
 **Codex** — the daemon polls Codex JSONL session logs directly via `\\wsl.localhost\` UNC paths. No hooks, no bridge scripts, no external processes. It tail-follows the JSONL files, parses events (`user_message`, `task_complete`, etc.), and writes the same state files.
 
-State files (`ds4cc_agent_<session_id>`) land in `%TEMP%`. The daemon polls them every 500ms and aggregates across all sessions — priority: **working > done > idle**.
+State files (`ds4cc_agent_<session_id>`) land in `%TEMP%\DS4CC\`. On startup DS4CC creates this directory and removes any leftover files from previous runs. Idle files are deleted as soon as they're read — the directory stays lean. The daemon polls every 500ms and aggregates across all sessions — priority: **working > done > idle**.
 
 Each agent is tracked individually:
 
@@ -244,7 +246,7 @@ target\release\ds4cc.exe
 
 ## Hook Setup
 
-### Claude Code
+### Claude Code + OpenCode
 
 Run from the repo root in WSL or Git Bash:
 
@@ -252,7 +254,12 @@ Run from the repo root in WSL or Git Bash:
 bash install-hooks.sh
 ```
 
-This copies the hook script to `~/.claude/hooks/`, strips CRLF line endings, and merges the hook config into `~/.claude/settings.json`, registering three lifecycle events:
+This installs both the Claude Code hook and the OpenCode plugin in one shot:
+
+- **Claude Code** — copies `ds4cc-state.sh` to `~/.claude/hooks/` and merges the hook config into `~/.claude/settings.json`
+- **OpenCode** — copies `ds4cc-opencode.js` to `~/.config/opencode/plugins/`
+
+Both hooks write agent state files to `%TEMP%\DS4CC\` (auto-discovered — no config needed).
 
 | Claude Code Event | What happens |
 |---|---|
@@ -260,7 +267,14 @@ This copies the hook script to `~/.claude/hooks/`, strips CRLF line endings, and
 | `Stop` | Lightbar → green (done) if task exceeded threshold, else idle |
 | `PostToolUseFailure` | Logged as error — agent self-recovers silently |
 
-Restart Claude Code after installing hooks.
+| OpenCode Event | What happens |
+|---|---|
+| `session.status` busy | Lightbar → blue pulse (working) |
+| `session.status` idle | Lightbar → green (done) or idle |
+| `session.error` | Logged as error |
+| `session.deleted` | State file removed |
+
+Restart Claude Code / OpenCode after installing hooks.
 
 ### Codex
 
@@ -333,7 +347,7 @@ Environment variables for the Claude Code hook script:
 |---|---|---|
 | `DS4CC_DONE_THRESHOLD_S` | `600` | Minimum task duration (seconds) before "done" fires |
 | `DS4CC_STALE_WORKING_S` | `900` | Seconds before a stuck "working" state is pruned |
-| `DS4CC_STATE_DIR` | `%TEMP%` | Directory for agent state files |
+| `DS4CC_STATE_DIR` | `%TEMP%\DS4CC` | Override the agent state file directory |
 
 For Codex, the done threshold is configured in `config.toml` under `[codex] done_threshold_s`.
 
