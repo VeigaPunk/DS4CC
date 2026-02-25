@@ -273,7 +273,7 @@ impl Default for Config {
             codex: CodexConfig::default(),
             opencode: OpenCodeConfig::default(),
             state_dir: default_state_dir(),
-            poll_interval_ms: 3330, // ~0.3Hz
+            poll_interval_ms: 500, // 2Hz
             idle_timeout_s: 30,
             stale_timeout_s: 600, // 10 minutes
             idle_reminder_s: 480, // 8 minutes per-agent
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn default_config_is_valid() {
         let config = Config::default();
-        assert_eq!(config.poll_interval_ms, 3330);
+        assert_eq!(config.poll_interval_ms, 500);
         assert_eq!(config.lightbar.idle.r, 255);
         assert_eq!(config.lightbar.idle.g, 140);
         assert_eq!(config.buttons.cross, "Enter");
