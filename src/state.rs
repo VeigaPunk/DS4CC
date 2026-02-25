@@ -8,7 +8,8 @@
 ///
 /// "working" files older than `stale_timeout_s` are ignored (crashed sessions).
 /// After `idle_timeout_s` in done, auto-transitions to idle.
-/// Error has no special visual/haptic treatment — the agent self-recovers silently.
+/// Error mirrors Working visually (same blue pulse, no rumble) — agent is still active,
+/// self-recovering silently. Working still takes priority over Error in aggregation.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

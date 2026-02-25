@@ -4,6 +4,7 @@
 ///   Idle    → orange, solid
 ///   Working → blue, pulsing (sinusoidal brightness)
 ///   Done    → green, solid
+///   Error   → same as Working (blue pulse) — agent is still active, self-recovering silently
 
 use crate::config::LightbarConfig;
 use crate::state::AgentState;
@@ -17,8 +18,9 @@ pub fn compute_color(
     match state {
         AgentState::Idle => (config.idle.r, config.idle.g, config.idle.b),
         AgentState::Done => (config.done.r, config.done.g, config.done.b),
-        AgentState::Error => (config.error.r, config.error.g, config.error.b),
-        AgentState::Working => {
+        // Error mirrors Working: agent is still active, recovering from the error silently.
+        // No visual alarm — the lightbar just keeps pulsing blue.
+        AgentState::Error | AgentState::Working => {
             // Sinusoidal pulse: brightness oscillates between 0.3 and 1.0
             let period = config.pulse_period_ms as f64;
             let phase = (elapsed_ms as f64 / period) * std::f64::consts::TAU;
@@ -71,6 +73,17 @@ mod tests {
         let cfg = default_config();
         let (r, g, b) = compute_color(&cfg, AgentState::Done, 0);
         assert_eq!((r, g, b), (0, 255, 0));
+    }
+
+    #[test]
+    fn error_mirrors_working() {
+        // Error should produce identical output to Working — agent keeps pulsing.
+        let cfg = default_config();
+        for t in [0u64, 500, 1000, 2000] {
+            let working = compute_color(&cfg, AgentState::Working, t);
+            let error = compute_color(&cfg, AgentState::Error, t);
+            assert_eq!(working, error, "Error and Working differ at t={t}ms");
+        }
     }
 
 }
