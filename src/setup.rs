@@ -24,26 +24,24 @@ const OPENCODE_JS: &str = include_str!("../hooks/opencode/ds4cc-opencode.js");
 /// In practice this just needs to change whenever the hook content changes.
 const HOOKS_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-r1");
 
-// ── Python snippet for merging settings.json ────────────────────────────────
+// ── Python one-liner for merging settings.json ──────────────────────────────
 //
-// Executed via: wsl bash -lc "python3 -c '<SNIPPET>'"
-// Using double-quotes in Python so it can be safely wrapped in single quotes
-// for bash.  The dict literals use double-quote strings for the same reason.
+// Passed directly to: wsl bash -lc "python3 -c '<SNIPPET>'"
+// Written as a true one-liner (semicolon-separated, no block control flow)
+// so it survives the -c argument without multi-line indentation issues.
+// Uses double-quotes throughout — safe inside single quotes for bash.
 
-const MERGE_SETTINGS_PY: &str = r#"import json,os
-p=os.path.expanduser("~/.claude/settings.json")
-c={}
-try:
- f=open(p); c=json.load(f); f.close()
-except: pass
-h=[{"matcher":"","hooks":[{"type":"command","command":"~/.claude/hooks/ds4cc-state.sh"}]}]
-c.setdefault("hooks",{})
-c["hooks"]["UserPromptSubmit"]=h
-c["hooks"]["Stop"]=h
-c["hooks"]["PostToolUseFailure"]=h
-os.makedirs(os.path.dirname(p),exist_ok=True)
-f=open(p,"w"); json.dump(c,f,indent=2); f.write("\n"); f.close()
-"#;
+const MERGE_SETTINGS_PY: &str = concat!(
+    "import json,os;",
+    "p=os.path.expanduser(\"~/.claude/settings.json\");",
+    "t=(open(p).read() if os.path.isfile(p) else \"\");",
+    "c=(json.loads(t) if t.strip() else {});",
+    "h=[{\"matcher\":\"\",\"hooks\":[{\"type\":\"command\",\"command\":\"~/.claude/hooks/ds4cc-state.sh\"}]}];",
+    "c.setdefault(\"hooks\",{});",
+    "c[\"hooks\"].update({\"UserPromptSubmit\":h,\"Stop\":h,\"PostToolUseFailure\":h});",
+    "d=os.path.dirname(p);os.makedirs(d,exist_ok=True);",
+    "f=open(p,\"w\");json.dump(c,f,indent=2);f.write(\"\\n\");f.close()"
+);
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -91,8 +89,11 @@ pub fn run() -> Option<SetupResult> {
 // ── Claude Code ──────────────────────────────────────────────────────────────
 
 fn install_claude_code_hook() -> bool {
+    // Strip Windows CRLF line endings — bash rejects scripts with \r\n.
+    let hook_sh = HOOK_SH.replace("\r\n", "\n");
+
     // Write hook script
-    if !wsl::wsl_write("~/.claude/hooks/ds4cc-state.sh", HOOK_SH) {
+    if !wsl::wsl_write("~/.claude/hooks/ds4cc-state.sh", &hook_sh) {
         log::warn!("setup: failed to write ds4cc-state.sh");
         return false;
     }
@@ -108,16 +109,10 @@ fn install_claude_code_hook() -> bool {
 }
 
 fn merge_claude_settings() {
-    // Collapse the Python snippet to a single logical line for -c argument.
-    // The snippet uses double-quotes throughout so it is safe inside single quotes.
-    let py: String = MERGE_SETTINGS_PY
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .collect::<Vec<_>>()
-        .join(";");
-
-    let cmd = format!("python3 -c '{py}'");
+    // MERGE_SETTINGS_PY is already a semicolon-joined one-liner (via concat!).
+    // Wrap it directly in single quotes for bash -c.  Double-quotes inside the
+    // snippet are safe because the outer delimiter is single-quote.
+    let cmd = format!("python3 -c '{MERGE_SETTINGS_PY}'");
     if wsl::run_wsl(&cmd).is_none() {
         log::warn!("setup: settings.json merge failed (python3 not available?)");
         log::warn!("setup: run 'bash install-hooks.sh' from the DS4CC repo as a fallback");
@@ -140,7 +135,8 @@ fn install_opencode_plugin() -> bool {
         return false;
     }
 
-    if !wsl::wsl_write("~/.config/opencode/plugins/ds4cc-opencode.js", OPENCODE_JS) {
+    let opencode_js = OPENCODE_JS.replace("\r\n", "\n");
+    if !wsl::wsl_write("~/.config/opencode/plugins/ds4cc-opencode.js", &opencode_js) {
         log::warn!("setup: failed to write ds4cc-opencode.js");
         return false;
     }
