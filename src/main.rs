@@ -10,6 +10,7 @@ mod mic;
 mod opencode_detect;
 mod output;
 mod rumble;
+mod setup;
 mod state;
 mod tmux_detect;
 mod tray;
@@ -36,6 +37,20 @@ async fn main() {
 
     let cfg = config::Config::load();
     log::info!("State dir: {}", cfg.state_dir);
+
+    // Auto-install Claude Code hooks + OpenCode plugin (first run / after update).
+    // Runs in background — startup is not blocked.  Subsequent runs are instant
+    // (version stamp check) so there is no recurring overhead.
+    tokio::spawn(async {
+        if let Some(result) = tokio::task::spawn_blocking(setup::run).await.unwrap_or(None) {
+            let mut installed = Vec::new();
+            if result.claude_code { installed.push("Claude Code hook"); }
+            if result.opencode    { installed.push("OpenCode plugin"); }
+            if !installed.is_empty() {
+                log::info!("Hooks installed: {}. Restart your AI tools to activate.", installed.join(", "));
+            }
+        }
+    });
 
     // Auto-detect tmux configuration (prefix + key bindings) via WSL
     let tmux_detected = if cfg.tmux.auto_detect && cfg.tmux.enabled {

@@ -1,0 +1,173 @@
+/// First-run setup: auto-install Claude Code hooks and OpenCode plugin via WSL.
+///
+/// Hook scripts are compiled into the binary with `include_str!`.  On first
+/// run (and after a version bump) they are written to the correct WSL paths
+/// and the Claude Code settings.json is updated automatically.
+///
+/// A version stamp at `%APPDATA%\ds4cc\hook_version` prevents redundant
+/// reinstalls on subsequent startups — subsequent calls return in microseconds.
+///
+/// Everything here is best-effort.  If WSL is unavailable the daemon continues
+/// to work normally (Codex polling is native and does not need WSL hooks).
+
+use crate::wsl;
+
+// ── Embedded hook content ────────────────────────────────────────────────────
+
+/// Claude Code hook script (bash).
+const HOOK_SH: &str = include_str!("../hooks/ds4cc-state.sh");
+
+/// OpenCode plugin (JavaScript).
+const OPENCODE_JS: &str = include_str!("../hooks/opencode/ds4cc-opencode.js");
+
+/// Bump this suffix to force a reinstall on the next launch after an update.
+/// In practice this just needs to change whenever the hook content changes.
+const HOOKS_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-r1");
+
+// ── Python snippet for merging settings.json ────────────────────────────────
+//
+// Executed via: wsl bash -lc "python3 -c '<SNIPPET>'"
+// Using double-quotes in Python so it can be safely wrapped in single quotes
+// for bash.  The dict literals use double-quote strings for the same reason.
+
+const MERGE_SETTINGS_PY: &str = r#"import json,os
+p=os.path.expanduser("~/.claude/settings.json")
+c={}
+try:
+ f=open(p); c=json.load(f); f.close()
+except: pass
+h=[{"matcher":"","hooks":[{"type":"command","command":"~/.claude/hooks/ds4cc-state.sh"}]}]
+c.setdefault("hooks",{})
+c["hooks"]["UserPromptSubmit"]=h
+c["hooks"]["Stop"]=h
+c["hooks"]["PostToolUseFailure"]=h
+os.makedirs(os.path.dirname(p),exist_ok=True)
+f=open(p,"w"); json.dump(c,f,indent=2); f.write("\n"); f.close()
+"#;
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/// What setup installed on this run (only populated on first run / after update).
+#[derive(Debug)]
+pub struct SetupResult {
+    pub claude_code: bool,
+    pub opencode: bool,
+}
+
+/// Run hook setup.
+///
+/// Returns `Some(SetupResult)` if hooks were installed/updated, `None` if
+/// everything was already current (common case after first run).
+///
+/// This function is **blocking** — call it inside `spawn_blocking` from async.
+pub fn run() -> Option<SetupResult> {
+    // Fast path: already up to date
+    if is_current() {
+        log::debug!("setup: hooks current ({}), skipping", HOOKS_VERSION);
+        return None;
+    }
+
+    // WSL availability check
+    match wsl::run_wsl("echo ok") {
+        Some(s) if s.trim() == "ok" => {}
+        _ => {
+            log::info!("setup: WSL unavailable — hook auto-install skipped");
+            // Stamp anyway so we don't retry on every startup when there's no WSL.
+            stamp();
+            return None;
+        }
+    }
+
+    log::info!("setup: installing hooks ({})", HOOKS_VERSION);
+
+    let claude_code = install_claude_code_hook();
+    let opencode = install_opencode_plugin();
+
+    stamp();
+
+    Some(SetupResult { claude_code, opencode })
+}
+
+// ── Claude Code ──────────────────────────────────────────────────────────────
+
+fn install_claude_code_hook() -> bool {
+    // Write hook script
+    if !wsl::wsl_write("~/.claude/hooks/ds4cc-state.sh", HOOK_SH) {
+        log::warn!("setup: failed to write ds4cc-state.sh");
+        return false;
+    }
+
+    // Make executable
+    wsl::run_wsl("chmod +x ~/.claude/hooks/ds4cc-state.sh");
+
+    // Merge hook entries into settings.json
+    merge_claude_settings();
+
+    log::info!("setup: Claude Code hook installed → ~/.claude/hooks/ds4cc-state.sh");
+    true
+}
+
+fn merge_claude_settings() {
+    // Collapse the Python snippet to a single logical line for -c argument.
+    // The snippet uses double-quotes throughout so it is safe inside single quotes.
+    let py: String = MERGE_SETTINGS_PY
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(";");
+
+    let cmd = format!("python3 -c '{py}'");
+    if wsl::run_wsl(&cmd).is_none() {
+        log::warn!("setup: settings.json merge failed (python3 not available?)");
+        log::warn!("setup: run 'bash install-hooks.sh' from the DS4CC repo as a fallback");
+    } else {
+        log::info!("setup: ~/.claude/settings.json updated");
+    }
+}
+
+// ── OpenCode ─────────────────────────────────────────────────────────────────
+
+fn install_opencode_plugin() -> bool {
+    // Only install if OpenCode is present (binary or config dir)
+    let detected = wsl::run_wsl(
+        "command -v opencode >/dev/null 2>&1 || [ -d ~/.config/opencode ] && echo yes || echo no",
+    )
+    .map(|s| s.trim() == "yes")
+    .unwrap_or(false);
+
+    if !detected {
+        return false;
+    }
+
+    if !wsl::wsl_write("~/.config/opencode/plugins/ds4cc-opencode.js", OPENCODE_JS) {
+        log::warn!("setup: failed to write ds4cc-opencode.js");
+        return false;
+    }
+
+    log::info!("setup: OpenCode plugin installed → ~/.config/opencode/plugins/ds4cc-opencode.js");
+    log::info!("setup: restart OpenCode to activate the plugin");
+    true
+}
+
+// ── Version stamp ─────────────────────────────────────────────────────────────
+
+fn stamp_path() -> Option<std::path::PathBuf> {
+    let appdata = std::env::var("APPDATA").ok()?;
+    Some(std::path::Path::new(&appdata).join("ds4cc").join("hook_version"))
+}
+
+fn is_current() -> bool {
+    stamp_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| s.trim() == HOOKS_VERSION)
+        .unwrap_or(false)
+}
+
+fn stamp() {
+    let Some(path) = stamp_path() else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, HOOKS_VERSION);
+}
