@@ -114,12 +114,14 @@ fn scan_agent_states(
             }
         }
 
-        agents.insert(agent_id, state);
-
-        // Skip idle agents for aggregation priority — they don't contribute
+        // Delete idle files immediately — they don't contribute to aggregation
+        // and their removal lets agent_tracker self-prune finished sessions.
         if state == AgentState::Idle {
+            let _ = std::fs::remove_file(&path);
             continue;
         }
+
+        agents.insert(agent_id, state);
 
         if state.priority() > best.priority() {
             best = state;

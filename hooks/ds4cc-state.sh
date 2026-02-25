@@ -24,16 +24,8 @@ if [ -n "${DS4CC_STATE_DIR:-}" ]; then
 fi
 
 if [ -z "${STATE_DIR:-}" ] && [ -d "/mnt/c" ] && [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then
-    # Prefer any existing DS4CC agent directory so state location stays consistent.
-    EXISTING_AGENT_FILE=$(ls /mnt/c/Users/*/AppData/Local/Temp/ds4cc_agent_* 2>/dev/null | head -n1 || true)
-    if [ -n "$EXISTING_AGENT_FILE" ]; then
-        STATE_DIR=$(dirname "$EXISTING_AGENT_FILE")
-    fi
-fi
-
-if [ -z "${STATE_DIR:-}" ] && [ -d "/mnt/c" ] && [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then
-    # Fast path: scan /mnt/c/Users/*/AppData/Local/Temp directly (no cmd.exe needed)
-    for _d in /mnt/c/Users/*/AppData/Local/Temp; do
+    # Fast path: scan for the dedicated DS4CC subdir under each user's Temp folder.
+    for _d in /mnt/c/Users/*/AppData/Local/Temp/DS4CC; do
         if [ -d "$_d" ]; then
             STATE_DIR="$_d"
             break
@@ -42,11 +34,11 @@ if [ -z "${STATE_DIR:-}" ] && [ -d "/mnt/c" ] && [ -f /proc/version ] && grep -q
 fi
 
 if [ -z "${STATE_DIR:-}" ] && [ -n "${TEMP:-}" ]; then
-    STATE_DIR="$TEMP"
+    STATE_DIR="$TEMP/DS4CC"
 fi
 
 if [ -z "${STATE_DIR:-}" ]; then
-    STATE_DIR="/tmp"
+    STATE_DIR="/tmp/DS4CC"
 fi
 
 mkdir -p "$STATE_DIR"

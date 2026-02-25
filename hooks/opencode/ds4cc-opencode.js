@@ -47,35 +47,24 @@ function resolveStateDir() {
     return process.env.DS4CC_STATE_DIR;
   }
 
-  // WSL: scan /mnt/c/Users/*/AppData/Local/Temp (skipping system accounts)
+  // WSL: scan /mnt/c/Users/*/AppData/Local/Temp (skipping system accounts).
+  // Always return the DS4CC subdir — the daemon creates it on startup.
   const wslBase = "/mnt/c/Users";
   if (existsSync(wslBase)) {
     try {
       const users = readdirSync(wslBase).filter((u) => !SYSTEM_USERS.has(u));
-
-      // First pass: prefer a dir that already has DS4CC agent files
       for (const user of users) {
         const tmpDir = join(wslBase, user, "AppData/Local/Temp");
-        if (!existsSync(tmpDir)) continue;
-        try {
-          if (readdirSync(tmpDir).some((f) => f.startsWith("ds4cc_agent_"))) {
-            return tmpDir;
-          }
-        } catch {}
-      }
-      // Second pass: first real user's accessible temp dir
-      for (const user of users) {
-        const tmpDir = join(wslBase, user, "AppData/Local/Temp");
-        if (existsSync(tmpDir)) return tmpDir;
+        if (existsSync(tmpDir)) return join(tmpDir, "DS4CC");
       }
     } catch {}
   }
 
   // Windows Desktop fallback: TEMP/TMP are proper Windows paths here
-  if (process.env.TEMP && process.env.TEMP !== "/tmp") return process.env.TEMP;
-  if (process.env.TMP && process.env.TMP !== "/tmp") return process.env.TMP;
+  if (process.env.TEMP && process.env.TEMP !== "/tmp") return join(process.env.TEMP, "DS4CC");
+  if (process.env.TMP && process.env.TMP !== "/tmp") return join(process.env.TMP, "DS4CC");
 
-  return "/tmp";
+  return "/tmp/DS4CC";
 }
 
 // ── File helpers ────────────────────────────────────────────────────

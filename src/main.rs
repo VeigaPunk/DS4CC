@@ -38,6 +38,32 @@ async fn main() {
     let cfg = config::Config::load();
     log::info!("State dir: {}", cfg.state_dir);
 
+    // Clean up leftover agent files from previous (possibly crashed) sessions,
+    // then ensure the dedicated state directory exists.
+    {
+        let state_dir = std::path::Path::new(&cfg.state_dir);
+        if state_dir.exists() {
+            if let Ok(entries) = std::fs::read_dir(state_dir) {
+                let mut removed = 0u32;
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.starts_with("ds4cc_agent_") {
+                        if std::fs::remove_file(entry.path()).is_ok() {
+                            removed += 1;
+                        }
+                    }
+                }
+                if removed > 0 {
+                    log::info!("Cleaned {removed} leftover agent file(s) from {}", cfg.state_dir);
+                }
+            }
+        }
+        if let Err(e) = std::fs::create_dir_all(state_dir) {
+            log::warn!("Failed to create state dir {}: {e}", cfg.state_dir);
+        }
+    }
+
     // Auto-install Claude Code hooks + OpenCode plugin (first run / after update).
     // Runs in background — startup is not blocked.  Subsequent runs are instant
     // (version stamp check) so there is no recurring overhead.
