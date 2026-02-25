@@ -21,10 +21,10 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 
-; Install to %LOCALAPPDATA%\DS4CC — no UAC prompt needed
+; Install to %LOCALAPPDATA%\DS4CC — no UAC prompt, no "Select install mode" dialog
 DefaultDirName={localappdata}\{#MyAppName}
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequiredOverridesAllowed=commandline
 
 ; Output
 OutputDir=output
