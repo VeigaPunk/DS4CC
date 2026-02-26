@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="imgs/logo.png" alt="DS4CC" width="320">
+  <img src="imgs/logo_nobg.png" alt="DS4CC" width="320">
 </p>
 
 <h1 align="center">DS4CC</h1>
