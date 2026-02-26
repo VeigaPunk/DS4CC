@@ -9,7 +9,7 @@
 #define MyAppPublisher "VeigaPunk"
 #define MyAppURL       "https://github.com/VeigaPunk/DS4CC"
 #define MyAppExe       "ds4cc.exe"
-#define WisprURL       "https://wisprflow.ai"
+#define WisprURL       "https://ref.wisprflow.ai/vgpnk"
 
 ; ── Setup ──────────────────────────────────────────────────────────────
 [Setup]

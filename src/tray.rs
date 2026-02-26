@@ -235,7 +235,7 @@ fn prompt_download_wispr_flow() {
     if result == IDYES {
         // Open default browser to the Wispr Flow website
         let _ = std::process::Command::new("explorer.exe")
-            .arg("https://wisprflow.ai")
+            .arg("https://ref.wisprflow.ai/vgpnk")
             .spawn();
     }
 }
