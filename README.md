@@ -27,6 +27,7 @@ Make invisible processes tactile. Make agent states observable, system-wide. Red
 DS4CC is a small Rust program that runs in the background and lets your PlayStation controller:
 
 - **Control tmux** — switch panes, split windows, navigate sessions
+- **Control Windows Terminal** — open tabs, switch tabs; shortcuts auto-detected from your `settings.json`
 - **Move the mouse and click** — touchpad swipe moves the cursor, touchpad press clicks; or use the left stick for cursor control
 - **Monitors Claude Code / Claude Desktop / Codex activity, on Windows & WSL instances** — lightbar changes provide a quick overview of agent states
 - **Give you rumble + lightbar feedback** when individual or aggregate agent states conditions are met
@@ -93,12 +94,14 @@ Mouse movement mode is toggled from the tray icon: **Mouse: Left Stick** switche
 
 | Button | Action |
 |---|---|
-| Square (□) | New session |
-| L1 | Previous window (Shift+Alt+Tab) |
-| R1 | Next window (Alt+Tab) |
+| Square (□) | New tab (Windows Terminal) |
+| L1 | Previous tab (Windows Terminal) |
+| R1 | Next tab (Windows Terminal) |
 | R2 | Ctrl+C |
 | L3 | Ctrl+T |
 | R3 | Ctrl+P |
+
+Default profile bindings (Square, L1, R1) are **auto-detected from Windows Terminal's `settings.json`** — DS4CC reads your custom keybinds and uses them automatically. Falls back to standard defaults (`Ctrl+Shift+1`, `Ctrl+Shift+Tab`, `Ctrl+Tab`) if detection fails. Override in config if needed.
 
 #### Tmux Profile
 
@@ -303,6 +306,13 @@ enabled = true
 auto_detect = true
 prefix = "Ctrl+B"
 
+[wt]
+enabled = true
+auto_detect = true
+square = "newTab"     # WT action name → auto-detected key combo
+l1 = "prevTab"
+r1 = "nextTab"
+
 [codex]
 enabled = true
 done_threshold_s = 600    # seconds before "done" fires (vs. straight to idle)
@@ -376,6 +386,7 @@ state.rs           Multi-agent state file polling and aggregation
 mic.rs             System microphone toggle via Core Audio COM
 tray.rs            System tray icon with profile indicator
 tmux_detect.rs     Auto-detect tmux prefix + key bindings via WSL
+wt_detect.rs       Auto-detect Windows Terminal keybindings from settings.json
 codex_poll.rs      Native Codex JSONL session poller via UNC paths
 wsl.rs             Shared WSL command execution utility
 ```
