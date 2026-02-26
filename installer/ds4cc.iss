@@ -5,7 +5,7 @@
 ;   3. Press Compile — output lands in installer\output\DS4CC-Setup.exe
 
 #define MyAppName      "DS4CC"
-#define MyAppVersion   "2.3.5"
+#define MyAppVersion   "2.4.0"
 #define MyAppPublisher "VeigaPunk"
 #define MyAppURL       "https://github.com/VeigaPunk/DS4CC"
 #define MyAppExe       "ds4cc.exe"
