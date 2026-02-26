@@ -9,11 +9,11 @@
 ///   Right stick → Mouse scroll wheel (vertical + horizontal)
 ///   PS       → Cycle profiles (Default ↔ Tmux)
 ///
-/// Default profile:
-///   Square   → OpenCode new session (auto-detected or ctrl+x then n)
-///   L1       → Shift+Alt+Tab (previous window)
-///   R1       → Alt+Tab (next window)
-///   L2       → Ctrl+Win
+/// Default profile (Windows Terminal shortcuts, auto-detected from settings.json):
+///   Square   → new tab / profile 1   (newTab,  default ctrl+shift+1)
+///   L1       → previous tab          (prevTab, default ctrl+shift+tab)
+///   R1       → next tab              (nextTab, default ctrl+tab)
+///   L2       → Ctrl+Win (hold)
 ///   R2       → Ctrl+C
 ///   L3       → Ctrl+T
 ///   R3       → Ctrl+P
@@ -29,10 +29,11 @@
 ///
 /// Combos are sent atomically in a single SendInput call.
 
-use crate::config::{OpenCodeConfig, ScrollConfig, StickMouseConfig, TouchpadConfig, TmuxConfig};
+use crate::config::{OpenCodeConfig, ScrollConfig, StickMouseConfig, TouchpadConfig, TmuxConfig, WtConfig};
 use crate::input::{ButtonState, DPad, UnifiedInput};
 use crate::opencode_detect::{ActionBinding, OpenCodeDetected};
 use crate::tmux_detect::TmuxDetected;
+use crate::wt_detect::WtDetected;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Instant;
 
@@ -528,6 +529,91 @@ impl OpenCodeState {
     }
 }
 
+// ── Windows Terminal shortcut state ──────────────────────────────────
+
+/// Resolved key combos for the Windows Terminal shortcut dictionary.
+#[derive(Clone)]
+struct WtState {
+    square:  Option<Vec<VKey>>,   // newTab  (profile 1)
+    l1:      Option<Vec<VKey>>,   // prevTab
+    r1:      Option<Vec<VKey>>,   // nextTab
+    l2:      Option<Vec<VKey>>,
+    r2:      Option<Vec<VKey>>,
+    l3:      Option<Vec<VKey>>,
+    r3:      Option<Vec<VKey>>,
+    share:   Option<Vec<VKey>>,
+    options: Option<Vec<VKey>>,
+}
+
+impl Default for WtState {
+    fn default() -> Self {
+        Self {
+            square:  default_key_for_wt_action("newTab"),
+            l1:      default_key_for_wt_action("prevTab"),
+            r1:      default_key_for_wt_action("nextTab"),
+            l2:      None,
+            r2:      None,
+            l3:      None,
+            r3:      None,
+            share:   None,
+            options: None,
+        }
+    }
+}
+
+/// Hardcoded fallback keys for well-known Windows Terminal actions.
+fn default_key_for_wt_action(action: &str) -> Option<Vec<VKey>> {
+    match action {
+        "newTab"       => parse_key_combo("ctrl+shift+1"),
+        "prevTab"      => parse_key_combo("ctrl+shift+tab"),
+        "nextTab"      => parse_key_combo("ctrl+tab"),
+        "closeTab"     => parse_key_combo("ctrl+shift+w"),
+        "duplicateTab" => parse_key_combo("ctrl+shift+d"),
+        "newWindow"    => parse_key_combo("ctrl+shift+n"),
+        "find"         => parse_key_combo("ctrl+shift+f"),
+        "splitDown"    => parse_key_combo("alt+shift+minus"),
+        "splitRight"   => parse_key_combo("alt+shift+plus"),
+        _ => None,
+    }
+}
+
+/// Resolve a single button's value for the Windows Terminal profile.
+/// Priority: auto-detected → hardcoded default → direct combo parse.
+fn resolve_wt_button(value: &str, detected: Option<&WtDetected>) -> Option<Vec<VKey>> {
+    if value.is_empty() {
+        return None;
+    }
+    if let Some(det) = detected {
+        if let Some(keys) = det.key_for_action(value) {
+            log::debug!("Resolved WT action '{value}' from detected bindings");
+            return Some(keys.clone());
+        }
+    }
+    if let Some(keys) = default_key_for_wt_action(value) {
+        log::debug!("Resolved WT action '{value}' from hardcoded defaults");
+        return Some(keys);
+    }
+    parse_key_combo(value)
+}
+
+impl WtState {
+    fn from_config(cfg: &WtConfig, detected: Option<&WtDetected>) -> Self {
+        let det = if cfg.auto_detect { detected } else { None };
+        let resolve = |s: &str| -> Option<Vec<VKey>> { resolve_wt_button(s, det) };
+        Self {
+            square:  resolve(&cfg.square),
+            l1:      resolve(&cfg.l1),
+            r1:      resolve(&cfg.r1),
+            l2:      resolve(&cfg.l2),
+            r2:      resolve(&cfg.r2),
+            l3:      resolve(&cfg.l3),
+            r3:      resolve(&cfg.r3),
+            share:   resolve(&cfg.share),
+            options: resolve(&cfg.options),
+        }
+    }
+}
+
 /// Main mapper state.
 pub struct MapperState {
     prev: ButtonState,
@@ -560,6 +646,7 @@ pub struct MapperState {
     tmux_available: bool, // false = only Default profile, PS does nothing
     tmux: TmuxState,
     opencode: OpenCodeState,
+    wt: WtState,
 }
 
 impl Default for MapperState {
@@ -587,6 +674,7 @@ impl Default for MapperState {
             tmux_available: true,
             tmux: TmuxState::default(),
             opencode: OpenCodeState::default(),
+            wt: WtState::default(),
         }
     }
 }
@@ -602,6 +690,8 @@ impl MapperState {
         tmux_detected: Option<&TmuxDetected>,
         opencode: &OpenCodeConfig,
         opencode_detected: Option<&OpenCodeDetected>,
+        wt: &WtConfig,
+        wt_detected: Option<&WtDetected>,
         mouse_stick_active: Arc<AtomicBool>,
     ) -> Self {
         Self {
@@ -618,6 +708,7 @@ impl MapperState {
             tmux_available: tmux.enabled,
             tmux: TmuxState::from_config(tmux, tmux_detected),
             opencode: OpenCodeState::from_config(opencode, opencode_detected),
+            wt: WtState::from_config(wt, wt_detected),
             ..Default::default()
         }
     }
@@ -666,21 +757,24 @@ impl MapperState {
         // --- Profile-dependent buttons ---
         match self.active_profile {
             Profile::Default => {
-                // Square → OpenCode new session (leader + n, or whatever was auto-detected)
+                // Square → Windows Terminal new tab (profile 1, auto-detected or ctrl+shift+1)
                 if current.square && !self.prev.square {
-                    if let Some(ref binding) = self.opencode.square {
-                        let action = match binding {
-                            ActionBinding::Combo(keys) => Action::KeyCombo(keys.clone()),
-                            ActionBinding::LeaderKey(keys) => Action::KeySequence(vec![
-                                self.opencode.leader.clone(),
-                                keys.clone(),
-                            ]),
-                        };
-                        actions.push(action);
+                    if let Some(ref keys) = self.wt.square {
+                        actions.push(Action::KeyCombo(keys.clone()));
                     }
                 }
-                on_press!(l1, Action::KeyCombo(vec![VKey::Shift, VKey::Alt, VKey::Tab]));
-                on_press!(r1, Action::KeyCombo(vec![VKey::Alt, VKey::Tab]));
+                // L1 → previous tab (auto-detected or ctrl+shift+tab)
+                if current.l1 && !self.prev.l1 {
+                    if let Some(ref keys) = self.wt.l1 {
+                        actions.push(Action::KeyCombo(keys.clone()));
+                    }
+                }
+                // R1 → next tab (auto-detected or ctrl+tab)
+                if current.r1 && !self.prev.r1 {
+                    if let Some(ref keys) = self.wt.r1 {
+                        actions.push(Action::KeyCombo(keys.clone()));
+                    }
+                }
                 // L2: hold Ctrl+Win while button is held
                 if current.l2 && !self.prev.l2 {
                     actions.push(Action::KeyDown(vec![VKey::Control, VKey::Win]));
@@ -1180,31 +1274,32 @@ mod tests {
     }
 
     #[test]
-    fn l1_produces_shift_alt_tab() {
+    fn l1_produces_prev_tab() {
+        // Default profile: L1 → Windows Terminal prevTab (ctrl+shift+tab)
         let mut mapper = MapperState::default();
         let input = input_with(|i| i.buttons.l1 = true);
         let actions = mapper.update(&input);
         assert_eq!(actions.len(), 1);
         match &actions[0] {
-            Action::KeyCombo(keys) => assert_eq!(keys, &[VKey::Shift, VKey::Alt, VKey::Tab]),
+            Action::KeyCombo(keys) => assert_eq!(keys, &[VKey::Control, VKey::Shift, VKey::Tab]),
             _ => panic!("Expected KeyCombo"),
         }
     }
 
     #[test]
-    fn square_produces_opencode_new_session() {
+    fn square_produces_wt_new_tab() {
+        // Default profile: Square → Windows Terminal newTab (ctrl+shift+1)
         let mut mapper = MapperState::default();
         let input = input_with(|i| i.buttons.square = true);
         let actions = mapper.update(&input);
         assert_eq!(actions.len(), 1);
-        // Default OpenCode binding: leader (ctrl+x) then N
         match &actions[0] {
-            Action::KeySequence(seq) => {
-                assert_eq!(seq.len(), 2);
-                assert_eq!(seq[0], vec![VKey::Control, VKey::X], "Expected ctrl+x leader");
-                assert_eq!(seq[1], vec![VKey::N], "Expected N for new-session");
-            }
-            _ => panic!("Expected KeySequence(leader + n)"),
+            Action::KeyCombo(keys) => assert_eq!(
+                keys,
+                &[VKey::Control, VKey::Shift, VKey::D1],
+                "Expected ctrl+shift+1 for newTab"
+            ),
+            _ => panic!("Expected KeyCombo(ctrl+shift+1)"),
         }
     }
 
@@ -1325,7 +1420,7 @@ mod tests {
         let scroll_cfg = ScrollConfig::default();
         let mut tmux_cfg = TmuxConfig::default();
         tmux_cfg.enabled = false;
-        let mut mapper = MapperState::new(&scroll_cfg, &crate::config::StickMouseConfig::default(), &crate::config::TouchpadConfig::default(), &tmux_cfg, None, &crate::config::OpenCodeConfig::default(), None, Arc::new(AtomicBool::new(false)));
+        let mut mapper = MapperState::new(&scroll_cfg, &crate::config::StickMouseConfig::default(), &crate::config::TouchpadConfig::default(), &tmux_cfg, None, &crate::config::OpenCodeConfig::default(), None, &crate::config::WtConfig::default(), None, Arc::new(AtomicBool::new(false)));
 
         // PS press should not switch profiles
         let ps_press = input_with(|i| i.buttons.ps = true);
@@ -1432,10 +1527,10 @@ mod tests {
     fn tmux_overrides_default_l1() {
         let mut mapper = MapperState::default();
 
-        // Default profile: L1 → Shift+Alt+Tab
+        // Default profile: L1 → Windows Terminal prevTab (ctrl+shift+tab)
         let input = input_with(|i| i.buttons.l1 = true);
         let actions = mapper.update(&input);
-        assert!(actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Shift, VKey::Alt, VKey::Tab])));
+        assert!(actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::Shift, VKey::Tab])));
 
         // Release and switch to tmux
         mapper.update(&UnifiedInput::default());
@@ -1454,14 +1549,12 @@ mod tests {
     fn tmux_overrides_default_square() {
         let mut mapper = MapperState::default();
 
-        // Default profile: Square → OpenCode new session (leader + n)
+        // Default profile: Square → Windows Terminal newTab (ctrl+shift+1)
         let input = input_with(|i| i.buttons.square = true);
         let actions = mapper.update(&input);
         assert!(actions.iter().any(|a| matches!(
             a,
-            Action::KeySequence(seq) if seq.len() == 2
-                && seq[0] == vec![VKey::Control, VKey::X]
-                && seq[1] == vec![VKey::N]
+            Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::Shift, VKey::D1]
         )));
 
         // Release and switch to tmux

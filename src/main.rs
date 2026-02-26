@@ -15,6 +15,7 @@ mod state;
 mod tmux_detect;
 mod tray;
 mod wsl;
+mod wt_detect;
 
 use crate::controller::ConnectionType;
 use crate::output::OutputState;
@@ -88,6 +89,13 @@ async fn main() {
     // Auto-detect OpenCode keybinds from ~/.config/opencode/opencode.json via WSL
     let opencode_detected = if cfg.opencode.auto_detect && cfg.opencode.enabled {
         opencode_detect::detect()
+    } else {
+        None
+    };
+
+    // Auto-detect Windows Terminal keybindings from settings.json
+    let wt_detected = if cfg.wt.auto_detect && cfg.wt.enabled {
+        wt_detect::detect()
     } else {
         None
     };
@@ -198,7 +206,7 @@ async fn main() {
         });
 
         // Run input loop — returns when device disconnects
-        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.stick_mouse, &cfg.touchpad, &cfg.tmux, tmux_detected.as_ref(), &cfg.opencode, opencode_detected.as_ref(), &tray_tx, Arc::clone(&player_leds), Arc::clone(&mouse_stick_active)).await;
+        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.stick_mouse, &cfg.touchpad, &cfg.tmux, tmux_detected.as_ref(), &cfg.opencode, opencode_detected.as_ref(), &cfg.wt, wt_detected.as_ref(), &tray_tx, Arc::clone(&player_leds), Arc::clone(&mouse_stick_active)).await;
 
         // Device disconnected — cancel output task and reconnect
         output_task.abort();
@@ -220,6 +228,8 @@ async fn run_input_loop(
     tmux_detected: Option<&tmux_detect::TmuxDetected>,
     opencode_cfg: &config::OpenCodeConfig,
     opencode_detected: Option<&opencode_detect::OpenCodeDetected>,
+    wt_cfg: &config::WtConfig,
+    wt_detected: Option<&wt_detect::WtDetected>,
     tray_tx: &std::sync::mpsc::Sender<tray::TrayCmd>,
     player_leds: Arc<AtomicU8>,
     mouse_stick_active: Arc<AtomicBool>,
@@ -232,6 +242,8 @@ async fn run_input_loop(
         tmux_detected,
         opencode_cfg,
         opencode_detected,
+        wt_cfg,
+        wt_detected,
         mouse_stick_active,
     );
     let mut buf = [0u8; 128];

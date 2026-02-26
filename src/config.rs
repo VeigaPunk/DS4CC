@@ -15,6 +15,7 @@ pub struct Config {
     pub tmux: TmuxConfig,
     pub codex: CodexConfig,
     pub opencode: OpenCodeConfig,
+    pub wt: WtConfig,
     /// Directory where agent state files are written (ds4cc_agent_*)
     pub state_dir: String,
     pub poll_interval_ms: u64,
@@ -245,6 +246,52 @@ impl Default for OpenCodeConfig {
     }
 }
 
+/// Windows Terminal keybinding configuration for the Default profile.
+///
+/// Each button maps to a WT action name (e.g. "prevTab") or a direct key combo
+/// (e.g. "ctrl+shift+tab"). Action names are resolved with the priority:
+///   1. Auto-detected from settings.json
+///   2. Hardcoded default for well-known WT actions
+///   3. Direct key combo parse (backward compatible)
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct WtConfig {
+    /// Enable Windows Terminal shortcut detection and mapping.
+    pub enabled: bool,
+    /// Auto-detect keybindings from settings.json.
+    pub auto_detect: bool,
+    /// Square → new tab (profile 1). Default: "newTab"
+    pub square: String,
+    /// L1 → previous tab. Default: "prevTab"
+    pub l1: String,
+    /// R1 → next tab. Default: "nextTab"
+    pub r1: String,
+    pub l2: String,
+    pub r2: String,
+    pub l3: String,
+    pub r3: String,
+    pub share: String,
+    pub options: String,
+}
+
+impl Default for WtConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            auto_detect: true,
+            square: "newTab".into(),
+            l1: "prevTab".into(),
+            r1: "nextTab".into(),
+            l2: "".into(),
+            r2: "".into(),
+            l3: "".into(),
+            r3: "".into(),
+            share: "".into(),
+            options: "".into(),
+        }
+    }
+}
+
 /// Button mapping configuration.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
@@ -272,6 +319,7 @@ impl Default for Config {
             tmux: TmuxConfig::default(),
             codex: CodexConfig::default(),
             opencode: OpenCodeConfig::default(),
+            wt: WtConfig::default(),
             state_dir: default_state_dir(),
             poll_interval_ms: 500, // 2Hz
             idle_timeout_s: 30,
