@@ -82,7 +82,7 @@ Two profiles: **Default** and **Tmux**, cycled with the PS button. All are fully
 | D-pad | Arrow keys |
 | Right stick | Scroll (vertical + horizontal) |
 | Touchpad touch | Move mouse cursor |
-| **Touchpad press** | **Left mouse click** |
+| Touchpad press | Mouse left-click |
 | Left stick | Move mouse cursor (stick mode) |
 | L2 | Wispr speech-to-text (hold to dictate) |
 | PS | Cycle profile (Default ↔ Tmux) |
