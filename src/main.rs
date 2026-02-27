@@ -155,14 +155,15 @@ async fn main() {
     // Main connection loop — reconnects on disconnect
     loop {
         // Find controller (USB priority: find_all_controllers returns USB first)
-        let (info, device) = loop {
+        let (info, device, bt_paired) = loop {
             if let Err(e) = api.refresh_devices() {
                 log::debug!("HID refresh failed: {e}");
             }
             let all = hid::find_all_controllers(&api);
+            let has_bt = all.iter().any(|c| c.connection_type == ConnectionType::Bluetooth);
             match all.into_iter().next() {
                 Some(info) => match hid::open_device(&api, &info) {
-                    Ok(dev) => break (info, dev),
+                    Ok(dev) => break (info, dev, has_bt),
                     Err(e) => {
                         log::warn!("Found controller but failed to open: {e}");
                     }
@@ -179,6 +180,9 @@ async fn main() {
             info.controller_type,
             info.connection_type
         );
+        if bt_paired && info.connection_type == ConnectionType::Usb {
+            log::info!("Bluetooth also paired — will serve as fallback if USB is disconnected");
+        }
 
         // Activate BT extended mode if needed
         if info.connection_type == ConnectionType::Bluetooth {
