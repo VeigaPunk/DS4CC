@@ -40,7 +40,7 @@ async fn main() {
             let ts_str = ts.to_string();
             let time_part = ts_str.split('T').nth(1).unwrap_or(&ts_str);
             let time_part = time_part.trim_end_matches('Z');
-            writeln!(buf, "{time_part} {:<5} {}", record.level(), record.args())
+            write!(buf, "{time_part} {:<5} {}\r\n", record.level(), record.args())
         })
         .init();
 
