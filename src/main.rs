@@ -32,7 +32,16 @@ use tokio::time::{sleep, Duration};
 #[tokio::main]
 async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format_timestamp_millis()
+        .format(|buf, record| {
+            use std::io::Write;
+            let ts = buf.timestamp_millis();
+            // Compact: "10:30:45.123 INFO  message"
+            // Strip date prefix — only keep HH:MM:SS.mmm
+            let ts_str = ts.to_string();
+            let time_part = ts_str.split('T').nth(1).unwrap_or(&ts_str);
+            let time_part = time_part.trim_end_matches('Z');
+            writeln!(buf, "{time_part} {:<5} {}", record.level(), record.args())
+        })
         .init();
 
     // Hide console window immediately — app runs as a tray icon.
