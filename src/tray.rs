@@ -32,6 +32,7 @@ const REG_RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
 /// Commands from the async runtime to the tray thread.
 pub enum TrayCmd {
     SetProfile(Profile),
+    SetStickMode(bool),
 }
 
 /// Spawn the tray icon on a background thread. Returns a channel sender.
@@ -142,6 +143,12 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
                 let (r, g, b) = profile_color(profile);
                 let _ = tray.set_icon(Some(make_icon(r, g, b)));
                 let _ = tray.set_tooltip(Some(format!("DS4CC — {profile}")));
+            }
+            Ok(TrayCmd::SetStickMode(stick)) => {
+                stick_item.set_checked(stick);
+                mouse_stick_active.store(stick, Ordering::Relaxed);
+                let mode = if stick { "left stick" } else { "touchpad" };
+                log::info!("Mouse cursor mode auto-set: {mode}");
             }
             Err(mpsc::TryRecvError::Disconnected) => break,
             Err(mpsc::TryRecvError::Empty) => {}

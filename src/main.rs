@@ -204,6 +204,11 @@ async fn main() {
             }
         }
 
+        // DS4 has no touchpad parsing — auto-enable stick mouse mode.
+        // DualSense switches back to touchpad mode (its native input).
+        let stick = info.controller_type.is_ds4();
+        let _ = tray_tx.send(tray::TrayCmd::SetStickMode(stick));
+
         let handle = hid::HidHandle::new(device);
         let ct = info.controller_type;
         let conn = info.connection_type;
