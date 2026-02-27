@@ -100,7 +100,7 @@ Type: filesandordirs; Name: "{%TEMP}\DS4CC"
 ; Launch the app when the user clicks "Finish" (optional tick, default on)
 Filename: "{app}\{#MyAppExe}"; \
   Description: "Launch {#MyAppName} now"; \
-  Flags: nowait postinstall skipifsilent
+  Flags: nowait postinstall skipifsilent runhidden
 
 ; Open Wispr Flow download page — only if the task was checked
 Filename: "{#WisprURL}"; \
