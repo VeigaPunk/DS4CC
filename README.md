@@ -26,12 +26,12 @@ Make invisible processes tactile. Make agent states observable, system-wide. Red
 
 DS4CC is a small Rust program that runs in the background and lets your PlayStation controller:
 
+- **Monitor Claude Code / Claude Desktop / OpenCode / Codex activity across Windows & WSL** — lightbar changes provide a quick overview of agent states
+- **Give you rumble + lightbar feedback** on agent state transitions
 - **Control tmux** — switch panes, split windows, navigate sessions
 - **Control Windows Terminal** — open tabs, switch tabs; shortcuts auto-detected from your `settings.json`
 - **Move the mouse and click** — touchpad swipe moves the cursor, touchpad press clicks; or use the left stick for cursor control
-- **Monitors Claude Code / Claude Desktop / Codex activity, on Windows & WSL instances** — lightbar changes provide a quick overview of agent states
-- **Give you rumble + lightbar feedback** when individual agent states conditions are met
-- **Act like a programmable dev companion** — buttons map to real keystrokes or key combos, all auto configurable by reading your custom binded presets
+- **Act like a programmable dev companion** — buttons map to real keystrokes or key combos, fully configurable per profile
 - **Pair with [Wispr](https://ref.wisprflow.ai/vgpnk) for a keyboard-free workflow** — voice handles text, controller handles everything else
 
 ---
@@ -39,9 +39,7 @@ DS4CC is a small Rust program that runs in the background and lets your PlayStat
 ## Quick Start
 
 1. Download **[DS4CC-Setup.exe](https://github.com/VeigaPunk/DS4CC/releases/latest)** and run it
-2. Plug in your DualSense and launch DS4CC
-
-**Hooks install automatically on first launch** — DS4CC writes the Claude Code hook into WSL and your Windows user profile. No manual setup needed.
+2. Plug in your controller and launch DS4CC — hooks install automatically, no manual setup needed
 
 The lightbar reflects real-time AI agent status — across all sessions, on both Windows and WSL. Rumble kicks in when a long-running task completes or an agent has been idle for a long time.
 
@@ -70,7 +68,7 @@ Colors, thresholds, and behavior are configurable via `%APPDATA%\ds4cc\config.to
 
 Press buttons → things happen. D-pad sends arrow keys. Right stick scrolls. Face buttons map to Enter, Escape, Tab.
 
-Two profiles: **Default** and **Tmux**, cycled with the PS button. All are fully customizable — just ask Claude to change the mappings in the source and rebuild. Want a different button for Ctrl+C? Different tmux bindings? Change it per profile.
+Two profiles: **Default** and **tmux**, cycled with the PS button. All are fully customizable — just ask Claude to change the mappings in the source and rebuild. Want a different button for Ctrl+C? Different tmux bindings? Change it per profile.
 
 #### Always Active
 
@@ -81,14 +79,14 @@ Two profiles: **Default** and **Tmux**, cycled with the PS button. All are fully
 | Triangle (△) | Tab |
 | D-pad | Arrow keys |
 | Right stick | Scroll (vertical + horizontal) |
-| Touchpad touch | Move mouse cursor |
+| Touchpad touch | Move mouse cursor (DualSense) |
 | Touchpad press | Mouse left-click |
 | Left stick | Move mouse cursor (stick mode) |
 | L2 | Wispr speech-to-text (hold to dictate) |
-| PS | Cycle profile (Default ↔ Tmux) |
-| Mute | Toggle system microphone |
+| PS | Cycle profile (Default ↔ tmux) |
+| Mute | Toggle system microphone (DualSense only) |
 
-Mouse movement mode is toggled from the tray icon: **Mouse: Left Stick** switches between touchpad swipe and left analog stick for cursor control. Touchpad click is always active regardless of mode.
+Mouse movement mode is toggled from the tray icon: **Mouse: Left Stick** switches between touchpad swipe and left analog stick for cursor control. DualShock 4 defaults to stick mode automatically. Touchpad click is always active regardless of mode.
 
 #### Default Profile
 
@@ -103,7 +101,7 @@ Mouse movement mode is toggled from the tray icon: **Mouse: Left Stick** switche
 
 Default profile bindings (Square, L1, R1) are **auto-detected from Windows Terminal's `settings.json`** — DS4CC reads your custom keybinds and uses them automatically. Falls back to standard defaults (`Ctrl+Shift+1`, `Ctrl+Shift+Tab`, `Ctrl+Tab`) if detection fails. Override in config if needed.
 
-#### Tmux Profile
+#### tmux Profile
 
 | Button | Action |
 |---|---|
@@ -114,7 +112,7 @@ Default profile bindings (Square, L1, R1) are **auto-detected from Windows Termi
 | L3 | Ctrl+T |
 | R3 | Ctrl+U (clear line) |
 
-Tmux bindings are auto-detected from the running tmux server via WSL. Falls back to standard defaults if detection fails. Override in config if needed.
+tmux bindings are auto-detected from the running tmux server via WSL. Falls back to standard defaults if detection fails. Override in config if needed.
 
 ### 🎙️ Controller + Wispr = No Keyboard
 
@@ -156,10 +154,10 @@ Each agent is tracked individually:
 
 Your controller becomes a status light.
 
-- **Lightbar** — color reflects agents state. Pulsing blue = working. Green = (long task) done. Configurable RGB & thresholds.
+- **Lightbar** — color reflects agent state. Pulsing blue = working. Green = (long task) done. Configurable RGB & thresholds.
 - **Rumble** — haptic patterns on state transitions. You feel when the AI finishes.
-- **Profile LEDs** — Profile 1 = 1 White LED on controller, Profile 2 = 2 White LEDs.
-- **Mic mute** — mute button toggles system microphone via Core Audio. LED lit = muted. Works on any profile.
+- **Profile LEDs** — Profile 1 = 1 white LED on controller, Profile 2 = 2 white LEDs.
+- **Mic mute** — mute button toggles system microphone via Core Audio (DualSense only). LED lit = muted.
 
 The output loop runs every ~33ms to keep LEDs smooth. Rumble is async but shares the HID device safely.
 
@@ -188,7 +186,7 @@ PS button cycles profile (shortcut mappings). System tray icon shows current pro
 | Show Log Window | Show/hide the console log window (X button disabled to prevent accidental exit) |
 | Exit | Quit |
 
-Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
+Tooltip shows `DS4CC — Default` or `DS4CC — tmux`.
 
 ---
 
@@ -205,8 +203,8 @@ Bluetooth supports all features except Microphone Input (DualSense only — DS4 
 
 - Windows 10 / 11
 - DualSense or DualShock 4 controller (USB or Bluetooth)
-- **Optional:** WSL2 — needed for Tmux profile and Codex integration
-- **Optional:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Claude Desktop](https://claude.ai/download), or [Codex](https://openai.com/index/codex/) for AI agent state feedback
+- **Optional:** WSL2 — needed for tmux profile and Codex integration
+- **Optional:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Claude Desktop](https://claude.ai/download), [OpenCode](https://opencode.ai), or [Codex](https://openai.com/index/codex/) for AI agent state feedback
 
 ---
 
@@ -398,15 +396,9 @@ wsl.rs             Shared WSL command execution utility
 
 When you run multiple AI agents, they can become hard to oversee. You might not know if they're working, idle or done.
 
-DS4CC turns that invisible state into:
+DS4CC turns that invisible state into light, color, and vibration. You feel when the AI finishes.
 
-- **Light**
-- **Color**
-- **Vibration**
-
-You feel when the AI finishes.
-
-Pair it with [Wispr](https://ref.wisprflow.ai/vgpnk) and you don't even need a keyboard. Voice dictates. Controller navigates. The lightbar tells you what the agents are doing. You lean back and ship code, while monitoring the situation.
+Works with DualSense and DualShock 4. Pair it with [Wispr](https://ref.wisprflow.ai/vgpnk) and you don't even need a keyboard. Voice dictates. Controller navigates. The lightbar tells you what the agents are doing. You lean back and ship code.
 
 *This is the way.*
 
