@@ -41,6 +41,10 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
 
+; Close running instance before upgrading
+CloseApplications=force
+CloseApplicationsFilter=*.exe
+
 ; Uninstall
 UninstallDisplayIcon={app}\{#MyAppExe}
 UninstallDisplayName={#MyAppName}
@@ -132,6 +136,15 @@ begin
     // Kill running DS4CC before removing files — it runs as a hidden background process
     Exec('taskkill', '/F /IM ds4cc.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  // Kill running DS4CC before overwriting the binary
+  Exec('taskkill', '/F /IM ds4cc.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
 end;
 
 procedure InitializeWizard();
