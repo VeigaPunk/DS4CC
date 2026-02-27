@@ -154,12 +154,13 @@ async fn main() {
 
     // Main connection loop — reconnects on disconnect
     loop {
-        // Find controller
+        // Find controller (USB priority: find_all_controllers returns USB first)
         let (info, device) = loop {
             if let Err(e) = api.refresh_devices() {
                 log::debug!("HID refresh failed: {e}");
             }
-            match hid::find_controller(&api) {
+            let all = hid::find_all_controllers(&api);
+            match all.into_iter().next() {
                 Some(info) => match hid::open_device(&api, &info) {
                     Ok(dev) => break (info, dev),
                     Err(e) => {
@@ -191,6 +192,44 @@ async fn main() {
         let ct = info.controller_type;
         let conn = info.connection_type;
 
+        // If connected over Bluetooth, spawn a background USB scanner thread.
+        // It sets `usb_available` when a USB controller appears so the input loop
+        // can exit and the main loop re-scans (picking USB with higher priority).
+        let (usb_available, scanner_stop): (Option<Arc<AtomicBool>>, Option<Arc<AtomicBool>>) =
+            if conn == ConnectionType::Bluetooth {
+                let flag = Arc::new(AtomicBool::new(false));
+                let stop = Arc::new(AtomicBool::new(false));
+                let flag_clone = Arc::clone(&flag);
+                let stop_clone = Arc::clone(&stop);
+                let _ = std::thread::Builder::new()
+                    .name("usb-scanner".into())
+                    .spawn(move || {
+                        let Ok(mut scanner_api) = hidapi::HidApi::new() else {
+                            log::warn!("USB scanner: failed to create HidApi instance");
+                            return;
+                        };
+                        loop {
+                            std::thread::sleep(std::time::Duration::from_secs(5));
+                            if stop_clone.load(Ordering::Relaxed) {
+                                log::debug!("USB scanner: stop signal received");
+                                return;
+                            }
+                            if let Err(e) = scanner_api.refresh_devices() {
+                                log::debug!("USB scanner refresh failed: {e}");
+                                continue;
+                            }
+                            if hid::has_usb_controller(&scanner_api) {
+                                log::info!("USB scanner: USB controller detected, signaling switch");
+                                flag_clone.store(true, Ordering::Relaxed);
+                                return;
+                            }
+                        }
+                    });
+                (Some(flag), Some(stop))
+            } else {
+                (None, None)
+            };
+
         // Shared player indicator LED state (AtomicU8 so both loops can read/write it).
         // Start at Player 1 (Default profile) on every connection.
         let player_leds = Arc::new(AtomicU8::new(PLAYER1_LEDS));
@@ -206,18 +245,35 @@ async fn main() {
             run_output_loop(output_handle, ct, conn, lightbar_cfg_clone, &mut state_rx_output, player_leds_out, idle_rx, done_rx).await;
         });
 
-        // Run input loop — returns when device disconnects
-        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.stick_mouse, &cfg.touchpad, &cfg.tmux, tmux_detected.as_ref(), &cfg.opencode, opencode_detected.as_ref(), &cfg.wt, wt_detected.as_ref(), &tray_tx, Arc::clone(&player_leds), Arc::clone(&mouse_stick_active)).await;
+        // Run input loop — returns when device disconnects or USB scanner signals
+        run_input_loop(handle, ct, conn, &cfg.scroll, &cfg.stick_mouse, &cfg.touchpad, &cfg.tmux, tmux_detected.as_ref(), &cfg.opencode, opencode_detected.as_ref(), &cfg.wt, wt_detected.as_ref(), &tray_tx, Arc::clone(&player_leds), Arc::clone(&mouse_stick_active), usb_available.clone()).await;
 
-        // Device disconnected — cancel output task and reconnect
+        // Input loop exited — cancel output task and stop USB scanner
         output_task.abort();
-        log::info!("Controller disconnected. Scanning for new connection...");
-        sleep(Duration::from_secs(1)).await;
+        if let Some(ref stop) = scanner_stop {
+            stop.store(true, Ordering::Relaxed);
+        }
+
+        // Determine why the input loop exited and reconnect accordingly
+        let switching_to_usb = usb_available
+            .as_ref()
+            .is_some_and(|f| f.load(Ordering::Relaxed));
+
+        if switching_to_usb {
+            log::info!("Switching to USB controller...");
+            // No sleep — USB is already present, re-scan will find it immediately
+        } else if conn == ConnectionType::Usb {
+            log::info!("USB disconnected. Scanning for Bluetooth fallback...");
+            sleep(Duration::from_millis(200)).await;
+        } else {
+            log::info!("Controller disconnected. Scanning for new connection...");
+            sleep(Duration::from_secs(1)).await;
+        }
     }
 }
 
 /// Input loop: read HID reports, parse, map to keystrokes.
-/// Returns when the device disconnects.
+/// Returns when the device disconnects or `usb_switch_flag` is set (BT→USB switch).
 async fn run_input_loop(
     handle: hid::HidHandle,
     ct: controller::ControllerType,
@@ -234,6 +290,7 @@ async fn run_input_loop(
     tray_tx: &std::sync::mpsc::Sender<tray::TrayCmd>,
     player_leds: Arc<AtomicU8>,
     mouse_stick_active: Arc<AtomicBool>,
+    usb_switch_flag: Option<Arc<AtomicBool>>,
 ) {
     let mut mapper_state = mapper::MapperState::new(
         scroll_cfg,
@@ -263,6 +320,15 @@ async fn run_input_loop(
                 // No data available — yield and retry
                 sleep(Duration::from_millis(4)).await;
                 consecutive_errors = 0;
+
+                // Check if USB scanner detected a USB controller (BT→USB switch)
+                if let Some(ref flag) = usb_switch_flag {
+                    if flag.load(Ordering::Relaxed) {
+                        log::info!("USB controller available — switching from Bluetooth");
+                        return;
+                    }
+                }
+
                 continue;
             }
             Ok(n) => {

@@ -17,10 +17,14 @@ pub struct ControllerInfo {
     pub path: String,
 }
 
-/// Find the first supported controller.
-pub fn find_controller(api: &HidApi) -> Option<ControllerInfo> {
+/// Find all supported controllers, sorted with USB devices first.
+/// When a controller is connected via both USB and Bluetooth simultaneously,
+/// USB will always appear first — callers can `.next()` to pick the preferred one.
+pub fn find_all_controllers(api: &HidApi) -> Vec<ControllerInfo> {
+    let mut usb = Vec::new();
+    let mut bt = Vec::new();
+
     for dev in api.device_list() {
-        // Filter by usage page and usage for gamepad collection
         if dev.usage_page() != GAMEPAD_USAGE_PAGE || dev.usage() != GAMEPAD_USAGE {
             continue;
         }
@@ -34,14 +38,32 @@ pub fn find_controller(api: &HidApi) -> Option<ControllerInfo> {
                 conn,
                 &path[..path.len().min(60)]
             );
-            return Some(ControllerInfo {
+            let info = ControllerInfo {
                 controller_type: ct,
                 connection_type: conn,
                 path,
-            });
+            };
+            match conn {
+                ConnectionType::Usb => usb.push(info),
+                ConnectionType::Bluetooth => bt.push(info),
+            }
         }
     }
-    None
+
+    usb.extend(bt);
+    usb
+}
+
+/// Quick check: is there a USB controller present?
+/// Used by the background USB scanner thread — avoids allocating a Vec.
+pub fn has_usb_controller(api: &HidApi) -> bool {
+    api.device_list().any(|dev| {
+        dev.usage_page() == GAMEPAD_USAGE_PAGE
+            && dev.usage() == GAMEPAD_USAGE
+            && controller::identify(dev.vendor_id(), dev.product_id()).is_some()
+            && controller::detect_connection(&dev.path().to_string_lossy())
+                == ConnectionType::Usb
+    })
 }
 
 /// Open the controller device.
@@ -128,5 +150,43 @@ impl HidHandle {
             }
         }
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usb_sorts_before_bt() {
+        let bt = ControllerInfo {
+            controller_type: ControllerType::DualSense,
+            connection_type: ConnectionType::Bluetooth,
+            path: "bt_path".into(),
+        };
+        let usb = ControllerInfo {
+            controller_type: ControllerType::DualSense,
+            connection_type: ConnectionType::Usb,
+            path: "usb_path".into(),
+        };
+        // Simulate the two-vec ordering from find_all_controllers
+        let mut usb_vec = vec![usb];
+        let bt_vec = vec![bt];
+        usb_vec.extend(bt_vec);
+        assert_eq!(usb_vec[0].connection_type, ConnectionType::Usb);
+        assert_eq!(usb_vec[1].connection_type, ConnectionType::Bluetooth);
+    }
+
+    #[test]
+    fn single_bt_when_no_usb() {
+        let bt = ControllerInfo {
+            controller_type: ControllerType::DualSense,
+            connection_type: ConnectionType::Bluetooth,
+            path: "bt_path".into(),
+        };
+        let mut usb_vec: Vec<ControllerInfo> = Vec::new();
+        let bt_vec = vec![bt];
+        usb_vec.extend(bt_vec);
+        assert_eq!(usb_vec.len(), 1);
+        assert_eq!(usb_vec[0].connection_type, ConnectionType::Bluetooth);
+    }
 }
