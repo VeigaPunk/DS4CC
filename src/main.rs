@@ -14,6 +14,7 @@ mod setup;
 mod state;
 mod tmux_detect;
 mod tray;
+mod update;
 mod wsl;
 mod wt_detect;
 

@@ -54,6 +54,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
     // Build context menu
     let wispr_item    = MenuItem::new("Open Wispr Flow", true, None);
     let restart_item  = MenuItem::new("Restart", true, None);
+    let update_item   = MenuItem::new("Check for Update", true, None);
     let startup_item  = CheckMenuItem::new("Enable auto start-up", true, auto_start_enabled, None);
     let stick_item    = CheckMenuItem::new("Mouse: Left Stick", true, stick_initially, None);
     let log_item      = CheckMenuItem::new("Show Log Window", true, false, None);
@@ -62,6 +63,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
     // Capture IDs for event matching
     let wispr_id   = wispr_item.id().clone();
     let restart_id = restart_item.id().clone();
+    let update_id  = update_item.id().clone();
     let startup_id = startup_item.id().clone();
     let stick_id   = stick_item.id().clone();
     let log_id     = log_item.id().clone();
@@ -70,6 +72,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
     let menu = Menu::new();
     menu.append(&wispr_item).expect("menu append");
     menu.append(&restart_item).expect("menu append");
+    menu.append(&update_item).expect("menu append");
     menu.append(&startup_item).expect("menu append");
     menu.append(&stick_item).expect("menu append");
     menu.append(&log_item).expect("menu append");
@@ -109,6 +112,8 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
                 restart_app();
             } else if event.id == wispr_id {
                 open_wispr_flow();
+            } else if event.id == update_id {
+                std::thread::spawn(|| crate::update::check_for_update());
             } else if event.id == startup_id {
                 // CheckMenuItem auto-toggles on click; is_checked() reflects new state
                 set_auto_start(startup_item.is_checked());
