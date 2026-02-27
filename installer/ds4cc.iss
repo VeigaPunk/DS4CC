@@ -84,6 +84,13 @@ Root: HKCU; \
   ValueData: """{app}\{#MyAppExe}"""; \
   Flags: uninsdeletevalue; Tasks: autostart
 
+; ── Uninstall cleanup ─────────────────────────────────────────────
+[UninstallDelete]
+; Config directory (%APPDATA%\ds4cc — config.toml lives here)
+Type: filesandordirs; Name: "{userappdata}\ds4cc"
+; Temp state directory (%TEMP%\DS4CC — agent state files)
+Type: filesandordirs; Name: "{%TEMP}\DS4CC"
+
 ; ── Post-install actions ───────────────────────────────────────────────
 [Run]
 ; Launch the app when the user clicks "Finish" (optional tick, default on)
@@ -114,6 +121,17 @@ begin
   Result := Exec(ExpandConstant('{sysnative}\wsl.exe'), '-e true', '',
                  SW_HIDE, ewWaitUntilTerminated, ResultCode)
             and (ResultCode = 0);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    // Kill running DS4CC before removing files — it runs as a hidden background process
+    Exec('taskkill', '/F /IM ds4cc.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
 end;
 
 procedure InitializeWizard();
