@@ -19,8 +19,10 @@ use std::sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc};
 use tray_icon::{Icon, TrayIconBuilder};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 
+use windows_sys::Win32::System::Console::GetConsoleWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+    DeleteMenu, DispatchMessageW, GetSystemMenu, PeekMessageW, ShowWindow,
+    TranslateMessage, MF_BYCOMMAND, MSG, PM_REMOVE, SC_CLOSE, SW_HIDE, SW_SHOW,
 };
 
 const ICON_SIZE: u32 = 32;
@@ -53,6 +55,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
     let restart_item  = MenuItem::new("Restart", true, None);
     let startup_item  = CheckMenuItem::new("Enable auto start-up", true, auto_start_enabled, None);
     let stick_item    = CheckMenuItem::new("Mouse: Left Stick", true, stick_initially, None);
+    let log_item      = CheckMenuItem::new("Show Log Window", true, false, None);
     let exit_item     = MenuItem::new("Exit", true, None);
 
     // Capture IDs for event matching
@@ -60,6 +63,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
     let restart_id = restart_item.id().clone();
     let startup_id = startup_item.id().clone();
     let stick_id   = stick_item.id().clone();
+    let log_id     = log_item.id().clone();
     let exit_id    = exit_item.id().clone();
 
     let menu = Menu::new();
@@ -67,6 +71,7 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
     menu.append(&restart_item).expect("menu append");
     menu.append(&startup_item).expect("menu append");
     menu.append(&stick_item).expect("menu append");
+    menu.append(&log_item).expect("menu append");
     menu.append(&PredefinedMenuItem::separator()).expect("menu append");
     menu.append(&exit_item).expect("menu append");
 
@@ -111,6 +116,24 @@ fn run(rx: mpsc::Receiver<TrayCmd>, initial: Profile, mouse_stick_active: Arc<At
                 mouse_stick_active.store(stick, Ordering::Relaxed);
                 let mode = if stick { "left stick" } else { "touchpad" };
                 log::info!("Mouse cursor mode: {mode}");
+            } else if event.id == log_id {
+                let show = log_item.is_checked();
+                unsafe {
+                    let console = GetConsoleWindow();
+                    if !console.is_null() {
+                        if show {
+                            ShowWindow(console, SW_SHOW);
+                            // Disable the X button so the user can't accidentally kill the process
+                            let hmenu = GetSystemMenu(console, 0);
+                            if !hmenu.is_null() {
+                                DeleteMenu(hmenu, SC_CLOSE as u32, MF_BYCOMMAND);
+                            }
+                        } else {
+                            ShowWindow(console, SW_HIDE);
+                        }
+                    }
+                }
+                log::info!("Log window: {}", if show { "shown" } else { "hidden" });
             }
         }
 

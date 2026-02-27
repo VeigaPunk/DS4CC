@@ -34,6 +34,18 @@ async fn main() {
         .format_timestamp_millis()
         .init();
 
+    // Hide console window immediately — app runs as a tray icon.
+    // Logs still accumulate; user can show the console via tray menu.
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Console::GetConsoleWindow;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+        let hwnd = GetConsoleWindow();
+        if !hwnd.is_null() {
+            ShowWindow(hwnd, SW_HIDE);
+        }
+    }
+
     log::info!("DS4CC v2 starting...");
 
     let cfg = config::Config::load();

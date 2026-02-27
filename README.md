@@ -51,9 +51,9 @@ Colors, thresholds, and behavior are configurable via `%APPDATA%\ds4cc\config.to
 
 ## How It Actually Works
 
-1. You launch `ds4cc.exe`
+1. You launch `ds4cc.exe` — the console window is hidden automatically
 2. It loads your config (`%APPDATA%\ds4cc\config.toml`, or defaults)
-3. It starts a tray icon
+3. It starts a tray icon (the only visible UI on launch)
 4. It creates `%TEMP%\DS4CC\` (cleaning any leftover agent files from crashed sessions), then starts watching it
 5. It auto-installs Claude Code hooks into WSL and the Windows user profile (first run / after update)
 6. It starts polling Codex JSONL session logs via `\\wsl.localhost\` (if available)
@@ -185,6 +185,7 @@ PS button cycles profile (shortcut mappings). System tray icon shows current pro
 | Restart | Restart DS4CC |
 | Enable auto start-up | Toggle Windows startup entry |
 | Mouse: Left Stick | Switch mouse cursor control between touchpad and left stick |
+| Show Log Window | Show/hide the console log window (X button disabled to prevent accidental exit) |
 | Exit | Quit |
 
 Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
