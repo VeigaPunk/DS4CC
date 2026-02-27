@@ -23,7 +23,7 @@
 ///   R1       → tmux prefix + next-window key
 ///   L2       → Ctrl+Win (hold)
 ///   R2       → tmux prefix + kill-window key
-///   R3       → Ctrl+P
+///   R3       → Ctrl+U (clear line)
 ///   Square   → tmux prefix + new-window key
 ///   L3       → Ctrl+T
 ///
@@ -810,7 +810,7 @@ impl MapperState {
                 }
                 on_press_tmux!(r2, r2);
                 on_press!(l3, Action::KeyCombo(vec![VKey::Control, VKey::T]));
-                on_press!(r3, Action::KeyCombo(vec![VKey::Control, VKey::P]));
+                on_press!(r3, Action::KeyCombo(vec![VKey::Control, VKey::U]));
                 on_press_tmux!(share, share);
                 on_press_tmux!(options, options);
                 // Note: touchpad button is handled globally by process_touchpad() above.
@@ -1480,8 +1480,8 @@ mod tests {
     }
 
     #[test]
-    fn r3_ctrl_p_both_profiles() {
-        // Default profile
+    fn r3_ctrl_p_default_ctrl_u_tmux() {
+        // Default profile: R3 → Ctrl+P
         let mut mapper = MapperState::default();
         let input = input_with(|i| i.buttons.r3 = true);
         let actions = mapper.update(&input);
@@ -1490,14 +1490,14 @@ mod tests {
             "R3 should send Ctrl+P in Default profile"
         );
 
-        // Tmux profile
+        // Tmux profile: R3 → Ctrl+U (clear line)
         let mut mapper = MapperState::default();
         switch_to_tmux(&mut mapper);
         let input = input_with(|i| i.buttons.r3 = true);
         let actions = mapper.update(&input);
         assert!(
-            actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::P])),
-            "R3 should send Ctrl+P in Tmux profile"
+            actions.iter().any(|a| matches!(a, Action::KeyCombo(k) if *k == vec![VKey::Control, VKey::U])),
+            "R3 should send Ctrl+U in Tmux profile"
         );
     }
 

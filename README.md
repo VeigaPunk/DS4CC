@@ -112,7 +112,7 @@ Default profile bindings (Square, L1, R1) are **auto-detected from Windows Termi
 | R1 | tmux: next-window |
 | R2 | tmux: kill-window |
 | L3 | Ctrl+T |
-| R3 | Ctrl+P |
+| R3 | Ctrl+U (clear line) |
 
 Tmux bindings are auto-detected from the running tmux server via WSL. Falls back to standard defaults if detection fails. Override in config if needed.
 
