@@ -322,7 +322,7 @@ impl Default for Config {
             wt: WtConfig::default(),
             state_dir: default_state_dir(),
             poll_interval_ms: 500, // 2Hz
-            idle_timeout_s: 30,
+            idle_timeout_s: 60,
             stale_timeout_s: 600, // 10 minutes
             idle_reminder_s: 480, // 8 minutes per-agent
         }

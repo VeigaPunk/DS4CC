@@ -131,6 +131,31 @@ fn scan_agent_states(
     (best, agents)
 }
 
+/// Remove all "done" agent files from disk so they don't re-trigger after auto-idle.
+fn clean_done_files(state_dir: &PathBuf) {
+    let entries = match std::fs::read_dir(state_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !name_str.starts_with("ds4cc_agent_") || name_str.ends_with("_start") {
+            continue;
+        }
+        let contents = match std::fs::read_to_string(entry.path()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        if AgentState::parse(&contents) == Some(AgentState::Done) {
+            let _ = std::fs::remove_file(entry.path());
+            // Also remove its timestamp file
+            let start_path = format!("{}_start", entry.path().display());
+            let _ = std::fs::remove_file(start_path);
+        }
+    }
+}
+
 /// Backward-compatible wrapper for tests.
 #[cfg(test)]
 fn aggregate_agent_states(state_dir: &PathBuf, stale_timeout: StdDuration) -> AgentState {
@@ -170,12 +195,15 @@ pub async fn poll_state_file(
     loop {
         ticker.tick().await;
 
-        // Auto-idle: if we've been in "done" long enough, transition to idle
+        // Auto-idle: if we've been in "done" long enough, transition to idle.
+        // Also remove the "done" state files from disk so the next scan doesn't
+        // re-read them and bounce back to Done (which caused an infinite loop).
         if idle_timeout_s > 0
             && last_state == AgentState::Done
             && state_changed_at.elapsed() >= Duration::from_secs(idle_timeout_s)
         {
             log::info!("Auto-idle: {last_state} → idle (after {idle_timeout_s}s)");
+            clean_done_files(&state_dir);
             last_state = AgentState::Idle;
             state_changed_at = Instant::now();
             let _ = tx.send(AgentState::Idle);
