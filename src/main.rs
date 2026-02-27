@@ -147,8 +147,9 @@ async fn main() {
     let idle_timeout_s = cfg.idle_timeout_s;
     let stale_timeout_s = cfg.stale_timeout_s;
     let idle_reminder_s = cfg.idle_reminder_s;
+    let subagent_filter_s = cfg.subagent_filter_s;
     tokio::spawn(async move {
-        state::poll_state_file(state_dir, poll_ms, idle_timeout_s, stale_timeout_s, idle_reminder_s, WORKING_DONE_MIN_MS, state_tx, idle_reminder_tx, done_rumble_tx).await;
+        state::poll_state_file(state_dir, poll_ms, idle_timeout_s, stale_timeout_s, idle_reminder_s, WORKING_DONE_MIN_MS, subagent_filter_s, state_tx, idle_reminder_tx, done_rumble_tx).await;
     });
 
     // Main connection loop — reconnects on disconnect

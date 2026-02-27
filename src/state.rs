@@ -174,6 +174,7 @@ pub async fn poll_state_file(
     stale_timeout_s: u64,
     idle_reminder_s: u64,
     done_threshold_ms: u64,
+    subagent_filter_s: u64,
     tx: tokio::sync::watch::Sender<AgentState>,
     idle_reminder_tx: mpsc::Sender<()>,
     done_rumble_tx: mpsc::Sender<()>,
@@ -184,6 +185,7 @@ pub async fn poll_state_file(
     let stale_timeout = StdDuration::from_secs(stale_timeout_s);
     let idle_reminder_dur = Duration::from_secs(idle_reminder_s);
     let done_threshold = Duration::from_millis(done_threshold_ms);
+    let subagent_filter = Duration::from_secs(subagent_filter_s);
 
     // Per-agent tracking: agent_id → (last known state, timestamp of that state)
     let mut agent_tracker: HashMap<String, (AgentState, Instant)> = HashMap::new();
@@ -262,13 +264,29 @@ pub async fn poll_state_file(
         // 2. Transition disappeared agents to Idle in-memory.
         //    scan_agent_states deletes idle files immediately (keeps the dir lean);
         //    we continue tracking their idle duration here so the reminder can fire.
+        //    Short-lived agents (worked < subagent_filter) are likely subagents —
+        //    mark their reminder as already fired so they never trigger rumble.
         for id in agent_tracker.keys().cloned().collect::<Vec<_>>() {
             if !current_agents.contains_key(&id) {
                 if let Some((state, since)) = agent_tracker.get_mut(&id) {
                     if *state != AgentState::Idle {
+                        let worked = now.duration_since(*since);
+                        let is_subagent =
+                            *state == AgentState::Working && worked < subagent_filter;
+                        if is_subagent {
+                            log::debug!(
+                                "Subagent filtered: {id} (worked {}s < {}s threshold)",
+                                worked.as_secs(),
+                                subagent_filter.as_secs()
+                            );
+                        }
                         *state = AgentState::Idle;
                         *since = now;
-                        reminder_fired.remove(&id);
+                        if is_subagent {
+                            reminder_fired.insert(id.clone());
+                        } else {
+                            reminder_fired.remove(&id);
+                        }
                     }
                 }
             }

@@ -25,6 +25,9 @@ pub struct Config {
     pub stale_timeout_s: u64,
     /// Seconds an individual agent must be idle before an attention rumble fires (0 = disabled)
     pub idle_reminder_s: u64,
+    /// Seconds an agent must have been working before it's eligible for idle reminders.
+    /// Agents that worked less than this are treated as subagents and silently pruned.
+    pub subagent_filter_s: u64,
 }
 
 /// Lightbar color configuration per agent state.
@@ -325,6 +328,7 @@ impl Default for Config {
             idle_timeout_s: 60,
             stale_timeout_s: 600, // 10 minutes
             idle_reminder_s: 480, // 8 minutes per-agent
+            subagent_filter_s: 40,
         }
     }
 }
