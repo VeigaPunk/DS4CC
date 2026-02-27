@@ -253,7 +253,11 @@ fn parse_ds4_usb(data: &[u8]) -> Result<UnifiedInput, ParseError> {
         left_stick: (data[off], data[off + 1]),
         right_stick: (data[off + 2], data[off + 3]),
         // DS4: buttons at bytes 4,5,6 then triggers at 7,8
-        buttons: parse_buttons(data[off + 4], data[off + 5], data[off + 6]),
+        buttons: {
+            let mut b = parse_buttons(data[off + 4], data[off + 5], data[off + 6]);
+            b.mute = false; // DS4 has no mute button; bit 2 of b2 is a counter
+            b
+        },
         l2_analog: data[off + 7],
         r2_analog: data[off + 8],
         // DS4 touchpad has a different layout — not yet implemented.
@@ -274,7 +278,11 @@ fn parse_ds4_bt(data: &[u8]) -> Result<UnifiedInput, ParseError> {
     Ok(UnifiedInput {
         left_stick: (data[off], data[off + 1]),
         right_stick: (data[off + 2], data[off + 3]),
-        buttons: parse_buttons(data[off + 4], data[off + 5], data[off + 6]),
+        buttons: {
+            let mut b = parse_buttons(data[off + 4], data[off + 5], data[off + 6]);
+            b.mute = false; // DS4 has no mute button; bit 2 of b2 is a counter
+            b
+        },
         l2_analog: data[off + 7],
         r2_analog: data[off + 8],
         // DS4 touchpad has a different layout — not yet implemented.

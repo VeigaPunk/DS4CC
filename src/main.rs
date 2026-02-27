@@ -375,9 +375,9 @@ async fn run_input_loop(
                             log::debug!("Action: {action:?}");
                         }
 
-                        // Mute button — toggle system mic on press (any profile)
+                        // Mute button — toggle system mic on press (DualSense only; DS4 has no mic)
                         let mute_now = unified.buttons.mute;
-                        if mute_now && !last_mute {
+                        if ct.is_dualsense() && mute_now && !last_mute {
                             tokio::task::spawn_blocking(mic::toggle_mute);
                         }
                         last_mute = mute_now;

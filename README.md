@@ -197,14 +197,14 @@ Tooltip shows `DS4CC — Default` or `DS4CC — Tmux`.
 | Controller | USB | Bluetooth |
 |---|:---:|:---:|
 | DualSense | ✓ | ✓ |
-| DualShock 4 | WIP | WIP |
+| DualShock 4 | ✓ | ✓ |
 
-Bluetooth supports all features except Microphone Input (WIP).
+Bluetooth supports all features except Microphone Input (DualSense only — DS4 has no built-in mic).
 
 ## Requirements
 
 - Windows 10 / 11
-- DualSense controller (USB or Bluetooth)
+- DualSense or DualShock 4 controller (USB or Bluetooth)
 - **Optional:** WSL2 — needed for Tmux profile and Codex integration
 - **Optional:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Claude Desktop](https://claude.ai/download), or [Codex](https://openai.com/index/codex/) for AI agent state feedback
 
