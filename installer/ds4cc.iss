@@ -46,9 +46,9 @@ UninstallDisplayIcon={app}\{#MyAppExe}
 UninstallDisplayName={#MyAppName}
 
 ; Version info embedded in the installer .exe
-VersionInfoVersion=2.3.3.0
+VersionInfoVersion={#MyAppVersion}.0
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion=2.3.3
+VersionInfoProductVersion={#MyAppVersion}
 
 ; ── Languages ──────────────────────────────────────────────────────────
 [Languages]
