@@ -22,7 +22,7 @@ const OPENCODE_JS: &str = include_str!("../hooks/opencode/ds4cc-opencode.js");
 
 /// Bump this suffix to force a reinstall on the next launch after an update.
 /// In practice this just needs to change whenever the hook content changes.
-const HOOKS_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-r3");
+const HOOKS_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-r4");
 
 // ── Python one-liner for merging settings.json ──────────────────────────────
 //

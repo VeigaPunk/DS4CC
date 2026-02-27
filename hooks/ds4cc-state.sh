@@ -24,15 +24,22 @@ if [ -n "${DS4CC_STATE_DIR:-}" ]; then
 fi
 
 if [ -z "${STATE_DIR:-}" ] && [ -d "/mnt/c" ] && [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then
-    # Scan for each user's Temp folder and append the DS4CC subdir.
-    # Check the parent (Temp), not DS4CC itself — the daemon creates DS4CC on startup
-    # but a race can leave it absent when the hook first fires.
-    for _parent in /mnt/c/Users/*/AppData/Local/Temp; do
-        if [ -d "$_parent" ]; then
-            STATE_DIR="$_parent/DS4CC"
+    # Prefer a Temp/DS4CC dir that already exists (daemon creates it on startup).
+    for _dir in /mnt/c/Users/*/AppData/Local/Temp/DS4CC; do
+        if [ -d "$_dir" ] && [ -w "$_dir" ]; then
+            STATE_DIR="$_dir"
             break
         fi
     done
+    # Fallback: writable Temp parent (skip system accounts like Default User).
+    if [ -z "${STATE_DIR:-}" ]; then
+        for _parent in /mnt/c/Users/*/AppData/Local/Temp; do
+            if [ -d "$_parent" ] && [ -w "$_parent" ]; then
+                STATE_DIR="$_parent/DS4CC"
+                break
+            fi
+        done
+    fi
 fi
 
 if [ -z "${STATE_DIR:-}" ] && [ -n "${TEMP:-}" ]; then

@@ -1,6 +1,6 @@
 [package]
 name = "ds4cc"
-version = "2.4.0"
+version = "2.4.1"
 edition = "2024"
 description = "Windows daemon bridging DualSense/DS4 controllers with AI coding agents"
 
